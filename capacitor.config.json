@@ -1,0 +1,6 @@
+{
+  "appId": "com.seumemo.secure",
+  "appName": "Memo Criptografado",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
