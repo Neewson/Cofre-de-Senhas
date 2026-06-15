@@ -27,7 +27,9 @@ import {
   SearchIcon,
   HelpCircle,
   X,
-  AlertTriangle
+  AlertTriangle,
+  Cloud,
+  CloudOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -38,7 +40,6 @@ import {
   EncryptedData 
 } from './lib/crypto';
 import { SecureRecord, DecryptedRecord, SecureConfig } from './types';
-import AndroidExportGuide from './components/AndroidExportGuide';
 
 export default function App() {
   // Authentication & Configuration states
@@ -53,7 +54,7 @@ export default function App() {
   const [setupError, setSetupError] = useState<string>('');
 
   // Main UI Tab state
-  const [activeTab, setActiveTab] = useState<'search' | 'add' | 'records' | 'export'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'add' | 'records'>('search');
 
   // Vault data (Decrypted in Memory)
   const [decryptedRecords, setDecryptedRecords] = useState<DecryptedRecord[]>([]);
@@ -78,6 +79,69 @@ export default function App() {
   // Backup Import/Export triggers
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Google Drive Cloud Backup states
+  const [gdriveAccessToken, setGdriveAccessToken] = useState<string | null>(null);
+  const [gdriveUserEmail, setGdriveUserEmail] = useState<string>(
+    localStorage.getItem('secure_gdrive_email') || ''
+  );
+  const [gdriveIsSyncing, setGdriveIsSyncing] = useState<boolean>(false);
+  const [gdriveStatusMessage, setGdriveStatusMessage] = useState<string | null>(null);
+  const [gdriveLastSync, setGdriveLastSync] = useState<string | null>(
+    localStorage.getItem('secure_gdrive_last_sync')
+  );
+  const [gdriveClientId, setGdriveClientId] = useState<string>(
+    localStorage.getItem('secure_google_client_id') || (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || ''
+  );
+  const [showGDriveClientSetup, setShowGDriveClientSetup] = useState<boolean>(false);
+
+  // Custom dialogs (to bypass iframe-blocked native alert/confirm APIs)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    onConfirm: () => void;
+    isDanger?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    isDanger: false
+  });
+
+  const [alertDialog, setAlertDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    title: '',
+    message: ''
+  });
+
+  const triggerConfirm = (title: string, message: string, onConfirm: () => void, isDanger = false, confirmText = 'Confirmar') => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirm();
+        setConfirmDialog(p => ({ ...p, isOpen: false }));
+      },
+      isDanger,
+      confirmText
+    });
+  };
+
+  const triggerAlert = (title: string, message: string) => {
+    setAlertDialog({
+      isOpen: true,
+      title,
+      message
+    });
+  };
 
   // System Time State (simulated Android system top-bar clock)
   const [systemTime, setSystemTime] = useState<string>('18:00');
@@ -218,7 +282,7 @@ export default function App() {
     setAddRecordSuccess(false);
 
     if (!newQuestion.trim() || !newAnswer.trim()) {
-      alert('Por favor, digite tanto a pergunta/frase quanto a resposta protegida.');
+      triggerAlert('Campos Vazios', 'Por favor, digite tanto a pergunta/frase quanto a resposta protegida.');
       return;
     }
 
@@ -266,7 +330,7 @@ export default function App() {
       setAddRecordSuccess(true);
       setTimeout(() => setAddRecordSuccess(false), 3000);
     } catch (e) {
-      alert('Ocorreu um erro ao encriptar as informações do registro.');
+      triggerAlert('Falha na Criptografia', 'Ocorreu um erro ao encriptar as informações do registro.');
       console.error(e);
     }
   };
@@ -275,18 +339,22 @@ export default function App() {
    * Delete static record
    */
   const handleDeleteRecord = (id: string) => {
-    if (!window.confirm('Tem certeza de que deseja apagar permanentemente esse registro criptografado? Essa ação é imediata e irreversível.')) {
-      return;
-    }
+    triggerConfirm(
+      'Deletar Registro',
+      'Tem certeza de que deseja apagar permanentemente esse registro criptografado? Essa ação é imediata e irreversível.',
+      () => {
+        // Update Storage
+        const savedStr = localStorage.getItem('secure_records') || '[]';
+        let secureList = JSON.parse(savedStr) as SecureRecord[];
+        secureList = secureList.filter(item => item.id !== id);
+        localStorage.setItem('secure_records', JSON.stringify(secureList));
 
-    // Update Storage
-    const savedStr = localStorage.getItem('secure_records') || '[]';
-    let secureList = JSON.parse(savedStr) as SecureRecord[];
-    secureList = secureList.filter(item => item.id !== id);
-    localStorage.setItem('secure_records', JSON.stringify(secureList));
-
-    // Update RAM
-    setDecryptedRecords(prev => prev.filter(item => item.id !== id));
+        // Update RAM
+        setDecryptedRecords(prev => prev.filter(item => item.id !== id));
+      },
+      true,
+      'Apagar'
+    );
   };
 
   /**
@@ -319,7 +387,25 @@ export default function App() {
     setDecryptedRecords([]);
     setRevealedSecureRecords({});
     setSearchTerm('');
-    setIsUnlocked(false);
+    isUnlocked && setIsUnlocked(false);
+  };
+
+  /**
+   * Safe purge of local database after strict custom confirmation
+   */
+  const handlePurgeVault = () => {
+    triggerConfirm(
+      'Apagar Todo o Cofre',
+      'Essa operação apagará as chaves salvas localmente do navegador de modo definitivo e irreversível. Certifique-se de que exportou seu backup antes de prosseguir. Deseja realmente APAGAR TUDO?',
+      () => {
+        localStorage.removeItem('secure_config');
+        localStorage.removeItem('secure_records');
+        setIsSetup(false);
+        handleLockVault();
+      },
+      true,
+      'Apagar Tudo'
+    );
   };
 
   /**
@@ -340,7 +426,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `Cofre_Backup_MemoCriptografado_${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -376,6 +462,253 @@ export default function App() {
       }
     };
     reader.readAsText(file);
+  };
+
+  /**
+   * Connect and authorize Google Drive
+   */
+  const handleConnectGDrive = (customClientId?: string) => {
+    const finalClientId = (customClientId || gdriveClientId || '').trim();
+    if (!finalClientId) {
+      triggerAlert(
+        'Configurar Google Client ID',
+        'Por favor, insira o seu Google Client ID nas configurações de backup antes de conectar o Google Drive.'
+      );
+      return;
+    }
+
+    try {
+      // Save it locally
+      localStorage.setItem('secure_google_client_id', finalClientId);
+      setGdriveClientId(finalClientId);
+
+      const client = (window as any).google?.accounts?.oauth2?.initTokenClient({
+        client_id: finalClientId,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: async (tokenResponse: any) => {
+          if (tokenResponse?.error) {
+            triggerAlert('Erro de Conexão', `Não foi possível conectar ao Google Drive: ${tokenResponse.error_description || tokenResponse.error}`);
+            return;
+          }
+          if (tokenResponse?.access_token) {
+            const token = tokenResponse.access_token;
+            setGdriveAccessToken(token);
+            setGdriveIsSyncing(true);
+            try {
+              const abRes = await fetch('https://www.googleapis.com/drive/v3/about?fields=user', {
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              if (abRes.ok) {
+                const abData = await abRes.json();
+                const emailStr = abData.user?.emailAddress || 'Conectado';
+                setGdriveUserEmail(emailStr);
+                localStorage.setItem('secure_gdrive_email', emailStr);
+              } else {
+                setGdriveUserEmail('Conectado');
+                localStorage.setItem('secure_gdrive_email', 'Conectado');
+              }
+              triggerAlert('Google Drive Ativo!', 'Seu Google Drive foi autenticado com sucesso no seu navegador. Suas chaves de segurança estão prontas para backup/restauração na nuvem.');
+            } catch (e) {
+              setGdriveUserEmail('Conectado');
+              localStorage.setItem('secure_gdrive_email', 'Conectado');
+            } finally {
+              setGdriveIsSyncing(false);
+            }
+          }
+        },
+      });
+
+      if (client) {
+        client.requestAccessToken({ prompt: 'consent' });
+      } else {
+        triggerAlert('Biblioteca Não Carregada', 'A biblioteca do Google Identity não foi totalmente carregada no navegador. Tente em alguns instantes.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      triggerAlert('Erro de Login', 'Não foi possível iniciar a autenticação de segurança do Google.');
+    }
+  };
+
+  /**
+   * Disconnect Google Drive
+   */
+  const handleDisconnectGDrive = () => {
+    setGdriveAccessToken(null);
+    setGdriveUserEmail('');
+    localStorage.removeItem('secure_gdrive_email');
+    triggerAlert('Nuvem Desconectada', 'Seu Google Drive foi desconectado temporariamente desta sessão da memória do navegador.');
+  };
+
+  /**
+   * Safe upload of backup metadata and data as JSON
+   */
+  const handleGDriveBackup = async () => {
+    if (!gdriveAccessToken) {
+      triggerAlert('Nuvem Desconectada', 'Por favor, conecte a sua conta do Google Drive antes de fazer backup.');
+      return;
+    }
+
+    setGdriveIsSyncing(true);
+    setGdriveStatusMessage('Procurando cofre anterior...');
+    try {
+      const rawData = localStorage.getItem('secure_records') || '[]';
+      const configData = localStorage.getItem('secure_config') || '{}';
+      
+      const transferPayload = {
+        appIdentifier: 'memo-seguro-criptografado-e2e',
+        exportedAt: new Date().toISOString(),
+        config: JSON.parse(configData),
+        records: JSON.parse(rawData)
+      };
+
+      // 1. Search for existing file named cofre_de_senhas_backup.json
+      const searchRes = await fetch(
+        "https://www.googleapis.com/drive/v3/files?q=name='cofre_de_senhas_backup.json' and trashed=false",
+        {
+          headers: { Authorization: `Bearer ${gdriveAccessToken}` },
+        }
+      );
+      if (!searchRes.ok) throw new Error('Falha ao autenticar ou consultar arquivos no Google Drive.');
+      
+      const searchData = await searchRes.json();
+      const existingFile = searchData.files?.[0];
+
+      let uploadRes;
+      if (existingFile) {
+        setGdriveStatusMessage('Atualizando cofre da nuvem...');
+        // 2a. Update existing file content directly
+        uploadRes = await fetch(
+          `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=media`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${gdriveAccessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(transferPayload),
+          }
+        );
+      } else {
+        setGdriveStatusMessage('Criando arquivo na nuvem...');
+        // 2b. Create new file with multipart metadata + file body
+        const metadata = {
+          name: 'cofre_de_senhas_backup.json',
+          mimeType: 'application/json',
+        };
+        const fileContent = JSON.stringify(transferPayload);
+        
+        const boundary = 'foo_bar_baz_boundary';
+        const delimiter = `\r\n--${boundary}\r\n`;
+        const closeDelimiter = `\r\n--${boundary}--`;
+        
+        const body = 
+          delimiter +
+          'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+          JSON.stringify(metadata) +
+          delimiter +
+          'Content-Type: application/json\r\n\r\n' +
+          fileContent +
+          closeDelimiter;
+
+        uploadRes = await fetch(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${gdriveAccessToken}`,
+              'Content-Type': `multipart/related; boundary=${boundary}`,
+            },
+            body,
+          }
+        );
+      }
+
+      if (uploadRes.ok) {
+        const nowStr = new Date().toLocaleString('pt-BR');
+        setGdriveLastSync(nowStr);
+        localStorage.setItem('secure_gdrive_last_sync', nowStr);
+        triggerAlert('Backup Concluído', 'Seu cofre de senhas foi criptografado e atualizado com pleno sucesso no seu Google Drive (arquivo: cofre_de_senhas_backup.json)!');
+      } else {
+        const errText = await uploadRes.text();
+        console.error(errText);
+        throw new Error('Falha no upload do cofre à nuvem.');
+      }
+    } catch (error: any) {
+      console.error(error);
+      triggerAlert('Erro de Sincronização', `Não foi possível enviar para o Google Drive: ${error.message || error}`);
+    } finally {
+      setGdriveIsSyncing(false);
+      setGdriveStatusMessage(null);
+    }
+  };
+
+  /**
+   * Restore from GDrive back onto client machine
+   */
+  const handleGDriveRestore = async () => {
+    if (!gdriveAccessToken) {
+      triggerAlert('Nuvem Desconectada', 'Por favor, conecte a sua conta do Google Drive antes de restaurar.');
+      return;
+    }
+
+    triggerConfirm(
+      'Restaurar da Nuvem',
+      'Isso substituirá TODOS os seus registros locais atualmente armazenados nesta máquina pelos dados salvos no seu backup do Google Drive. Deseja realmente prosseguir com a restauração?',
+      async () => {
+        setGdriveIsSyncing(true);
+        setGdriveStatusMessage('Procurando arquivo de backup...');
+        try {
+          const searchRes = await fetch(
+            "https://www.googleapis.com/drive/v3/files?q=name='cofre_de_senhas_backup.json' and trashed=false",
+            {
+              headers: { Authorization: `Bearer ${gdriveAccessToken}` },
+            }
+          );
+          if (!searchRes.ok) throw new Error('Falha ao procurar por arquivos no Google Drive.');
+          
+          const searchData = await searchRes.json();
+          const existingFile = searchData.files?.[0];
+
+          if (!existingFile) {
+            triggerAlert('Nenhum Backup Encontrado', 'Não encontramos nenhum arquivo "cofre_de_senhas_backup.json" no seu Google Drive criado por esta plataforma.');
+            return;
+          }
+
+          setGdriveStatusMessage('Baixando dados criptografados...');
+          const downloadRes = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${existingFile.id}?alt=media`,
+            {
+              headers: { Authorization: `Bearer ${gdriveAccessToken}` },
+            }
+          );
+          if (!downloadRes.ok) throw new Error('Falha ao baixar conteúdo do arquivo.');
+          
+          const payload = await downloadRes.json();
+
+          if (payload.appIdentifier !== 'memo-seguro-criptografado-e2e') {
+            triggerAlert('Cofre Inválido', 'O arquivo encontrado no Google Drive não pertence ao formato oficial deste aplicativo.');
+            return;
+          }
+
+          // Import details to LocalStorage
+          localStorage.setItem('secure_config', JSON.stringify(payload.config));
+          localStorage.setItem('secure_records', JSON.stringify(payload.records));
+          
+          setImportStatus({ success: true, message: 'Cofre importado diretamente do Google Drive com total sucesso! Redigite sua senha mestra para desbloquear.' });
+          setIsSetup(true);
+          handleLockVault();
+          triggerAlert('Restaurado com Sucesso', 'Informações criptografadas baixadas da nuvem e aplicadas localmente. O cofre do dispositivo foi trancado para segurança.');
+        } catch (error: any) {
+          console.error(error);
+          triggerAlert('Falha de Restauração', `Erro ao restaurar da nuvem: ${error.message || error}`);
+        } finally {
+          setGdriveIsSyncing(false);
+          setGdriveStatusMessage(null);
+        }
+      },
+      false,
+      'Restaurar do Drive'
+    );
   };
 
   // ----------------------------------------------------
@@ -425,7 +758,7 @@ export default function App() {
           </div>
           
           <h1 className="text-4xl font-display font-extrabold tracking-tight text-white leading-tight">
-            Memo <span className="relative inline-block"><span className="absolute -inset-1 rounded-lg bg-emerald-500/10 blur-sm"></span><span className="relative text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">Criptografado</span></span>
+            Cofre <span className="relative inline-block"><span className="absolute -inset-1 rounded-lg bg-emerald-500/10 blur-sm"></span><span className="relative text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">de Senhas</span></span>
           </h1>
           
           <p className="text-xs text-slate-400 leading-relaxed font-sans">
@@ -490,10 +823,10 @@ export default function App() {
                 <div className="flex items-center justify-between py-4 border-b border-slate-900/60 mb-4" id="view-header">
                   <div className="flex items-center space-x-2.5">
                     <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 font-black text-sm shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-                      M
+                      C
                     </div>
                     <div>
-                      <h2 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Memo Seguro</h2>
+                      <h2 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h2>
                       <span className="text-[9px] text-emerald-400 tracking-wider font-mono">ENCRYPTED VAULT LIVE</span>
                     </div>
                   </div>
@@ -676,45 +1009,6 @@ export default function App() {
                         <span>Desbloquear Cofre</span>
                       </button>
                     </form>
-
-                    <div className="pt-6 border-t border-slate-900/60 flex flex-col items-center space-y-3">
-                      <div className="flex flex-col space-y-1 w-full">
-                        <span className="text-[10px] text-slate-500 text-center font-medium">Precisa resetar ou mudar de cofre?</span>
-                        <div className="flex justify-center gap-2 mt-1">
-                          <button 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="px-3.5 py-2 bg-[#090b11] hover:bg-slate-900 border border-slate-800/80 text-[10px] font-bold text-slate-300 rounded-lg cursor-pointer transition flex items-center space-x-1"
-                            id="btn-import-change-vault"
-                          >
-                            <Upload className="h-3 w-3 text-emerald-400" />
-                            <span>Importar JSON</span>
-                          </button>
-
-                          <button 
-                            onClick={() => {
-                              if(window.confirm("Essa operação apagará as chaves salvas localmente do navegador de modo irreversível. Certifique-se de que exportou seu backup antes. Limpar?")) {
-                                localStorage.removeItem('secure_config');
-                                localStorage.removeItem('secure_records');
-                                setIsSetup(false);
-                                handleLockVault();
-                              }
-                            }}
-                            className="px-3.5 py-2 bg-red-950/20 hover:bg-red-950/35 border border-red-950/40 text-[10px] font-bold text-red-400 rounded-lg cursor-pointer transition flex items-center space-x-1"
-                            id="btn-purge-keys-vault"
-                          >
-                            <Trash2 className="h-3 w-3 text-red-400" />
-                            <span>Limpar Tudo</span>
-                          </button>
-                        </div>
-                      </div>
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleImportBackup} 
-                        accept=".json" 
-                        className="hidden" 
-                      />
-                    </div>
                   </motion.div>
                 )}
 
@@ -734,7 +1028,7 @@ export default function App() {
                     <div className="flex-grow space-y-4">
                       
                       {/* Sub-Header Tabs */}
-                      <div className="grid grid-cols-4 gap-1 p-1 bg-[#090b11] border border-slate-800/80 rounded-xl" id="nav-tabs">
+                      <div className="grid grid-cols-3 gap-1 p-1 bg-[#090b11] border border-slate-800/80 rounded-xl" id="nav-tabs">
                         <button
                           onClick={() => setActiveTab('search')}
                           className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
@@ -761,14 +1055,6 @@ export default function App() {
                           }`}
                         >
                           Cofre ({decryptedRecords.length})
-                        </button>
-                        <button
-                          onClick={() => setActiveTab('export')}
-                          className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
-                            activeTab === 'export' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-[0_2px_10px_rgba(16,185,129,0.25)]' : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          iOS/APK
                         </button>
                       </div>
 
@@ -812,7 +1098,7 @@ export default function App() {
                               <div className="p-8 text-center text-slate-600 bg-[#090b11]/20 border border-slate-900 border-dashed rounded-2xl space-y-2 select-none">
                                 <Search className="h-10 w-10 mx-auto opacity-20 text-emerald-400" />
                                 <div className="text-xs font-semibold">Aguardando busca automatizada...</div>
-                                <div className="text-[10px] text-slate-600 leading-normal">Ao digitar algo correspondente a um Memo, a resposta correspondente será revelada imediatamente na tela!</div>
+                                <div className="text-[10px] text-slate-600 leading-normal">Ao digitar algo correspondente a um Registro, a resposta correspondente será revelada imediatamente na tela!</div>
                               </div>
                             ) : (
                               <div className="space-y-3">
@@ -867,7 +1153,7 @@ export default function App() {
                                 {/* B. INCLUSIVE OR CLOSE FUZZY ENTRIES MATCHES */}
                                 {matchingFuzzyRecords.length > 0 ? (
                                   <div className="space-y-2">
-                                    <h4 className="text-[10px] text-slate-500 uppercase font-bold tracking-widest font-mono">Memos Semelhantes ("{searchTerm}")</h4>
+                                    <h4 className="text-[10px] text-slate-500 uppercase font-bold tracking-widest font-mono">Registros Semelhantes ("{searchTerm}")</h4>
                                     <div className="space-y-2 select-none">
                                       {matchingFuzzyRecords.map(item => (
                                         <div key={item.id} className="p-3 bg-[#090b11]/80 border border-slate-900 rounded-xl space-y-1.5 hover:border-slate-800 transition duration-200">
@@ -903,8 +1189,8 @@ export default function App() {
                                 {!exactMatchedRecord && matchingFuzzyRecords.length === 0 && (
                                   <div className="p-6 bg-[#090b11]/20 border border-slate-900 border-dashed rounded-2xl text-center py-6">
                                     <HelpCircle className="h-6 w-6 text-slate-700 mx-auto mb-1.5" />
-                                    <p className="text-xs text-slate-400 font-semibold">Nenhum memo correspondente no momento...</p>
-                                    <p className="text-[10px] text-slate-500 max-w-[280px] mx-auto mt-1 leading-normal">Gostaria de criar um novo memo para responder a essa pergunta?</p>
+                                    <p className="text-xs text-slate-400 font-semibold">Nenhum registro correspondente no momento...</p>
+                                    <p className="text-[10px] text-slate-500 max-w-[280px] mx-auto mt-1 leading-normal">Gostaria de criar um novo registro para responder a essa pergunta?</p>
                                     <button
                                       onClick={() => {
                                         setNewQuestion(searchTerm);
@@ -912,7 +1198,7 @@ export default function App() {
                                       }}
                                       className="mt-2.5 text-[10px] font-bold text-emerald-400 hover:underline uppercase tracking-wider font-mono"
                                     >
-                                      Criar memo com "{searchTerm}" &rarr;
+                                      Criar registro com "{searchTerm}" &rarr;
                                     </button>
                                   </div>
                                 )}
@@ -927,7 +1213,7 @@ export default function App() {
                       {activeTab === 'add' && (
                         <div className="space-y-4 text-left" id="tab-add">
                           <div className="space-y-1">
-                            <h3 className="text-xs font-mono font-bold tracking-wider text-emerald-400 uppercase">Criar Novo Memo Codificado</h3>
+                            <h3 className="text-xs font-mono font-bold tracking-wider text-emerald-400 uppercase">Criar Novo Registro Codificado</h3>
                             <p className="text-[11px] text-slate-400 leading-relaxed">
                               Insira uma chave ou pergunta correspondente e defina qual deve ser a resposta mostrada.
                             </p>
@@ -990,7 +1276,7 @@ export default function App() {
                               id="btn-add-record"
                             >
                               <Plus className="h-4 w-4" />
-                              <span>Salvar Memo Encriptado</span>
+                              <span>Salvar Registro Encriptado</span>
                             </button>
                           </form>
                         </div>
@@ -1001,7 +1287,7 @@ export default function App() {
                         <div className="space-y-4 text-left" id="tab-records">
                           <div className="flex justify-between items-center bg-[#090b11]/40 p-2 rounded-xl border border-slate-900/40">
                             <div>
-                              <h3 className="text-xs font-mono font-bold tracking-wider text-emerald-400 uppercase">Todos os Memos Armazenados</h3>
+                              <h3 className="text-xs font-mono font-bold tracking-wider text-emerald-400 uppercase">Todos os Registros Armazenados</h3>
                               <p className="text-[9px] text-slate-400 font-semibold leading-tight">Decodificados temporariamente em memória RAM</p>
                             </div>
                             <span className="text-[9px] px-2 py-0.5 bg-[#090b11] border border-slate-800/80 text-emerald-400 rounded-full font-mono font-bold">
@@ -1074,24 +1360,171 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* Vault backups links */}
-                          <div className="pt-3 border-t border-slate-900/60 flex justify-between gap-2">
-                            <button
-                              onClick={handleExportBackup}
-                              className="flex-1 py-2 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1 font-bold"
-                              id="btn-export-records"
-                            >
-                              <Download className="h-3.5 w-3.5 text-emerald-400" />
-                              <span>Exportar Backup (.json)</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                          {/* Vault backups & complete management (Only visible when unlocked) */}
+                          <div className="pt-4 border-t border-slate-900/60 space-y-3">
+                            <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Configurações e Segurança</div>
+                            
+                            <div className="grid grid-cols-2 gap-2">
+                              {/* EXPORT BUTTON */}
+                              <button
+                                onClick={handleExportBackup}
+                                className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
+                                id="btn-export-records"
+                              >
+                                <Download className="h-3.5 w-3.5 text-emerald-400" />
+                                <span>Exportar JSON</span>
+                              </button>
 
-                      {/* TAB 4: ANDROID & EXPORT UTILITIES */}
-                      {activeTab === 'export' && (
-                        <div className="text-left" id="tab-export">
-                          <AndroidExportGuide encryptedRecordsJSON={localStorage.getItem('secure_records') || '[]'} />
+                              {/* IMPORT BUTTON */}
+                              <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
+                                id="btn-import-records-unlocked"
+                              >
+                                <Upload className="h-3.5 w-3.5 text-blue-400" />
+                                <span>Importar JSON</span>
+                              </button>
+                            </div>
+
+                            {/* GOOGLE DRIVE CLOUD BACKUP SECTION */}
+                            <div className="pt-3 border-t border-slate-900/40 space-y-2.5">
+                              <div className="flex items-center justify-between">
+                                <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1">
+                                  <Cloud className="h-3 w-3 text-emerald-400" />
+                                  <span>Backup na Nuvem (Google Drive)</span>
+                                </div>
+                                {gdriveAccessToken ? (
+                                  <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
+                                    Conectado
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono">
+                                    Desconectado
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* GDrive status info / instructions */}
+                              {gdriveAccessToken ? (
+                                <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2 text-left">
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <div className="text-[10px] text-slate-400">Conta conectada:</div>
+                                      <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{gdriveUserEmail}</div>
+                                    </div>
+                                    <button 
+                                      onClick={handleDisconnectGDrive}
+                                      className="text-[9px] font-bold text-red-400 hover:underline uppercase tracking-wider font-mono flex items-center space-x-1"
+                                    >
+                                      <span>Desconectar</span>
+                                    </button>
+                                  </div>
+
+                                  {gdriveLastSync && (
+                                    <div className="text-[9px] text-slate-500 font-mono">
+                                      Último Sincronismo: <span className="text-slate-400 font-semibold">{gdriveLastSync}</span>
+                                    </div>
+                                  )}
+
+                                  {gdriveIsSyncing && gdriveStatusMessage && (
+                                    <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
+                                      <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                                      <span>{gdriveStatusMessage}</span>
+                                    </div>
+                                  )}
+
+                                  <div className="grid grid-cols-2 gap-2 pt-1.5">
+                                    <button
+                                      onClick={handleGDriveBackup}
+                                      disabled={gdriveIsSyncing}
+                                      className="py-2 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
+                                    >
+                                      <RefreshCw className={`h-3 w-3 ${gdriveIsSyncing ? 'animate-spin' : ''}`} />
+                                      <span>Salvar na Nuvem</span>
+                                    </button>
+                                    <button
+                                      onClick={handleGDriveRestore}
+                                      disabled={gdriveIsSyncing}
+                                      className="py-2 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
+                                    >
+                                      <Download className="h-3 w-3" />
+                                      <span>Baixar da Nuvem</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-3 bg-[#090b11]/30 border border-slate-900 rounded-xl space-y-2 text-left bg-[#090b11]/60">
+                                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                                    Salve seus dados criptografados com segurança de ponta-a-ponta na sua própria nuvem.
+                                  </p>
+
+                                  <button
+                                    onClick={() => handleConnectGDrive()}
+                                    className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
+                                  >
+                                    <Cloud className="h-3.5 w-3.5" />
+                                    <span>Autenticar & Conectar</span>
+                                  </button>
+
+                                  <div className="pt-1.5 border-t border-slate-900/60">
+                                    <button
+                                      onClick={() => setShowGDriveClientSetup(!showGDriveClientSetup)}
+                                      className="w-full text-center text-[9px] text-slate-500 hover:text-slate-400 uppercase font-bold tracking-wider font-mono py-1 cursor-pointer"
+                                    >
+                                      {showGDriveClientSetup ? 'Ocultar Configurações de API ✕' : 'Ver ID do Cliente Google &rarr;'}
+                                    </button>
+
+                                    {showGDriveClientSetup && (
+                                      <motion.div 
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        className="space-y-2 pt-2 text-left"
+                                      >
+                                        <div className="space-y-1">
+                                          <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+                                            Google OAuth 2.0 Client ID
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={gdriveClientId}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setGdriveClientId(val);
+                                              localStorage.setItem('secure_google_client_id', val);
+                                            }}
+                                            placeholder="Ex: 749364...apps.googleusercontent.com"
+                                            className="w-full bg-[#05070a] border border-slate-900 focus:border-slate-800 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none"
+                                          />
+                                        </div>
+                                        <p className="text-[9px] text-slate-500 leading-normal font-sans">
+                                          Nós usamos o escopo seguro e limitado <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
+                                        </p>
+                                      </motion.div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* PURGE VAULT BUTTON */}
+                            <button
+                              onClick={handlePurgeVault}
+                              className="w-full py-2.5 bg-red-950/20 hover:bg-red-950/30 border border-red-900/30 text-red-400 text-[10px] rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold"
+                              id="btn-purge-records-unlocked"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                              <span>Deletar Todo o Cofre (Apagar Dados)</span>
+                            </button>
+
+                            {/* Live Import Status Message */}
+                            {importStatus && (
+                              <div className={`p-2.5 border text-[10px] text-center rounded-xl font-mono ${
+                                importStatus.success ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400' : 'bg-red-950/20 border-red-500/20 text-red-400'
+                              }`}>
+                                {importStatus.message}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
 
@@ -1183,7 +1616,7 @@ export default function App() {
                 </div>
                 <h3 className="font-mono font-bold tracking-wider text-white text-sm uppercase">Registro Protegido</h3>
                 <p className="text-xs text-slate-400 leading-relaxed max-w-[260px] mx-auto">
-                  Redigite sua chave mestra para confirmar sua identidade e ler este memo seguro.
+                  Redigite sua chave mestra para confirmar sua identidade e ler este registro seguro.
                 </p>
               </div>
 
@@ -1223,6 +1656,111 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* CUSTOM CONFIRM DIALOG MODAL */}
+      <AnimatePresence>
+        {confirmDialog.isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            id="confirm-modal-overlay"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="bg-[#0c0e14] border border-slate-800 p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-[0_10px_50px_rgba(0,0,0,0.8)] relative text-center"
+              id="confirm-modal-card"
+            >
+              <div className="text-center space-y-2">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mx-auto mb-2 shadow-inner ${
+                  confirmDialog.isDanger ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                }`}>
+                  {confirmDialog.isDanger ? <AlertTriangle className="h-6 w-6 animate-pulse" /> : <Shield className="h-6 w-6" />}
+                </div>
+                <h3 className="font-mono font-bold tracking-wider text-white text-sm uppercase">{confirmDialog.title}</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  {confirmDialog.message}
+                </p>
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-850 text-slate-300 text-xs rounded-xl font-bold transition duration-200 cursor-pointer active:scale-[0.98]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDialog.onConfirm}
+                  className={`flex-1 py-2.5 text-xs rounded-xl font-black transition duration-200 cursor-pointer uppercase tracking-wider font-mono active:scale-[0.98] ${
+                    confirmDialog.isDanger 
+                      ? 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white shadow-[0_2px_15px_rgba(239,68,68,0.25)]' 
+                      : 'bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-900 shadow-[0_2px_15px_rgba(16,185,129,0.25)]'
+                  }`}
+                >
+                  {confirmDialog.confirmText || 'Confirmar'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* CUSTOM ALERT DIALOG MODAL */}
+      <AnimatePresence>
+        {alertDialog.isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center z-50 p-4"
+            id="alert-modal-overlay"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="bg-[#0c0e14] border border-slate-800 p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-[0_10px_50px_rgba(0,0,0,0.8)] relative text-center"
+              id="alert-modal-card"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center justify-center mx-auto mb-2 shadow-inner">
+                  <AlertTriangle className="h-6 w-6" />
+                </div>
+                <h3 className="font-mono font-bold tracking-wider text-white text-sm uppercase">{alertDialog.title}</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  {alertDialog.message}
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAlertDialog(prev => ({ ...prev, isOpen: false }))}
+                  className="w-full py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 text-xs rounded-xl font-black transition duration-200 cursor-pointer shadow-[0_2px_15px_rgba(245,158,11,0.25)] uppercase tracking-wider font-mono active:scale-[0.98]"
+                >
+                  OK
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* GLOBAL HIDDEN FILE INPUT (Shared across setup and unlocked screens) */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleImportBackup} 
+        accept=".json" 
+        className="hidden" 
+        id="global-import-file-input"
+      />
 
     </div>
   );

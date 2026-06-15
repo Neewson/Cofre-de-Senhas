@@ -1,6 +1,6 @@
 {
-  "name": "Memo Criptografado",
-  "description": "Aplicativo de memorando e perguntas/respostas criptografado de ponta-a-ponta com senha mestra para segurança máxima.",
+  "name": "Cofre de Senhas",
+  "description": "Aplicativo de cofre de senhas e perguntas/respostas criptografado de ponta-a-ponta com senha mestra para segurança máxima.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
