@@ -75,6 +75,7 @@ export default function App() {
   const [challengePassword, setChallengePassword] = useState<string>('');
   const [challengeError, setChallengeError] = useState<string>('');
   const [revealedSecureRecords, setRevealedSecureRecords] = useState<Record<string, boolean>>({});
+  const [revealedInCofre, setRevealedInCofre] = useState<Record<string, boolean>>({});
 
   // Backup Import/Export triggers
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(null);
@@ -169,6 +170,12 @@ export default function App() {
     const interval = setInterval(updateTime, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  // Whenever activeTab changes (leaving a menu / view), reset all revealed states back to hidden (REVELAR)
+  useEffect(() => {
+    setRevealedInCofre({});
+    setRevealedSecureRecords({});
+  }, [activeTab]);
 
   /**
    * Handles first-time password setup scheme
@@ -370,6 +377,10 @@ export default function App() {
           ...prev,
           [activeChallengeRecordId]: true
         }));
+        setRevealedInCofre(prev => ({
+          ...prev,
+          [activeChallengeRecordId]: true
+        }));
       }
       setActiveChallengeRecordId(null);
       setChallengePassword('');
@@ -386,6 +397,7 @@ export default function App() {
     setEnteredPassword('');
     setDecryptedRecords([]);
     setRevealedSecureRecords({});
+    setRevealedInCofre({});
     setSearchTerm('');
     isUnlocked && setIsUnlocked(false);
   };
@@ -1087,9 +1099,7 @@ export default function App() {
                                 </button>
                               )}
                             </div>
-                            <p className="text-[10px] text-slate-500 italic">
-                              Dica: Digite a palavra ou frase (ex: <strong className="text-slate-400">11/06/2026?</strong>). Diferença de maiúsculas/minúsculas é totalmente ignorada!
-                            </p>
+
                           </div>
 
                           {/* DYNAMIC SEARCH RESULT WINDOW */}
@@ -1114,7 +1124,7 @@ export default function App() {
                                     </div>
                                     
                                     <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Pergunta encontrada:</div>
-                                    <div className="text-sm font-semibold text-emerald-300 leading-snug">{exactMatchedRecord.question}</div>
+                                    <div className="text-sm font-semibold text-emerald-300 leading-snug whitespace-pre-wrap">{exactMatchedRecord.question}</div>
                                     
                                     <div className="border-t border-slate-900/60 pt-2 pb-1">
                                       {exactMatchedRecord.requireMasterPasswordToReveal && !revealedSecureRecords[exactMatchedRecord.id] ? (
@@ -1157,7 +1167,7 @@ export default function App() {
                                     <div className="space-y-2 select-none">
                                       {matchingFuzzyRecords.map(item => (
                                         <div key={item.id} className="p-3 bg-[#090b11]/80 border border-slate-900 rounded-xl space-y-1.5 hover:border-slate-800 transition duration-200">
-                                          <div className="text-xs font-semibold text-slate-300">{item.question}</div>
+                                          <div className="text-xs font-semibold text-slate-300 whitespace-pre-wrap">{item.question}</div>
                                           
                                           {item.requireMasterPasswordToReveal && !revealedSecureRecords[item.id] ? (
                                             <div className="flex items-center justify-between text-[10px] pt-1">
@@ -1213,29 +1223,26 @@ export default function App() {
                       {activeTab === 'add' && (
                         <div className="space-y-4 text-left" id="tab-add">
                           <div className="space-y-1">
-                            <h3 className="text-xs font-mono font-bold tracking-wider text-emerald-400 uppercase">Criar Novo Registro Codificado</h3>
-                            <p className="text-[11px] text-slate-400 leading-relaxed">
-                              Insira uma chave ou pergunta correspondente e defina qual deve ser a resposta mostrada.
-                            </p>
+                            <h3 className="text-xs font-mono font-bold tracking-wider text-emerald-400 uppercase">CRIAR NOVO REGISTRO</h3>
                           </div>
 
                           <form onSubmit={handleAddRecord} className="space-y-4">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pergunta anterior ao ponto de interrogação (?):</label>
-                              <input 
-                                type="text"
-                                placeholder="ex: 11/06/2026? ou Senha Dropbox?"
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PERGUNTA (Sem ponto)</label>
+                              <textarea 
+                                placeholder="..."
                                 value={newQuestion}
                                 onChange={(e) => setNewQuestion(e.target.value)}
+                                rows={3}
                                 className="w-full bg-[#090b11] border border-slate-800/80 hover:border-slate-700/80 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 focus:outline-none rounded-xl px-4 py-3 text-xs text-slate-200 transition-all duration-200 shadow-inner"
                                 id="new-record-question"
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Resposta correspondente (Texto Seguro):</label>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">RESPOSTA</label>
                               <textarea
-                                placeholder="ex: Criei o app. ou MinhaSenhaExtremaSegura#"
+                                placeholder="..."
                                 value={newAnswer}
                                 onChange={(e) => setNewAnswer(e.target.value)}
                                 rows={3}
@@ -1244,23 +1251,18 @@ export default function App() {
                               />
                             </div>
 
-                            <div className="p-3.5 bg-[#090b11]/80 border border-slate-800/80 rounded-xl space-y-2 shadow-inner">
-                              <div className="flex items-start space-x-2.5">
+                            <div className="p-3 bg-[#090b11]/80 border border-slate-800/80 rounded-xl shadow-inner">
+                              <div className="flex items-center space-x-2.5">
                                 <input 
                                   type="checkbox"
                                   id="req-pass-checkbox"
                                   checked={requirePasswordToReveal}
                                   onChange={(e) => setRequirePasswordToReveal(e.target.checked)}
-                                  className="mt-0.5 rounded border-slate-800 bg-[#090b11] text-emerald-500 focus:ring-0 cursor-pointer"
+                                  className="rounded border-slate-800 bg-[#090b11] text-emerald-500 focus:ring-0 cursor-pointer h-4 w-4"
                                 />
-                                <div className="space-y-1">
-                                  <label htmlFor="req-pass-checkbox" className="text-xs font-bold text-slate-200 cursor-pointer leading-tight block">
-                                    Exigir senha mestra para revelar
-                                  </label>
-                                  <p className="text-[10px] text-slate-400 leading-normal">
-                                    Quando ativado, os usuários precisarão redigitar a Senha Mestra explicitamente para ver esta resposta. Perfeito para senhas de banco ou dados sensíveis.
-                                  </p>
-                                </div>
+                                <label htmlFor="req-pass-checkbox" className="text-xs font-bold text-slate-200 cursor-pointer leading-none">
+                                  Exigir senha mestra
+                                </label>
                               </div>
                             </div>
 
@@ -1305,11 +1307,12 @@ export default function App() {
                             <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1" id="records-overflow">
                               {decryptedRecords.map(item => {
                                 const isLocked = item.requireMasterPasswordToReveal && !revealedSecureRecords[item.id];
+                                const isRevealed = revealedInCofre[item.id];
                                 return (
                                   <div key={item.id} className="p-3.5 bg-[#090b11] border border-slate-900 rounded-xl space-y-1.5 relative hover:border-slate-800/60 transition-all duration-200 shadow-md">
                                     <div className="flex items-start justify-between pr-8">
                                       <div className="space-y-0.5">
-                                        <div className="text-xs font-bold text-slate-200 select-all">{item.question}</div>
+                                        <div className="text-xs font-bold text-slate-200 select-all whitespace-pre-wrap">{item.question}</div>
                                         <div className="text-[9px] text-slate-500 font-mono">Cachê Local • Criado em {new Date(item.createdAt).toLocaleDateString('pt-BR')}</div>
                                       </div>
                                       
@@ -1323,25 +1326,53 @@ export default function App() {
 
                                     {/* Sub-Answer view */}
                                     <div className="border-t border-slate-900/65 pt-1.5">
-                                      {isLocked ? (
+                                      {isRevealed && !isLocked ? (
+                                        <div className="space-y-2">
+                                          <div className="text-emerald-300 font-mono text-[11px] whitespace-pre-wrap select-all break-all leading-normal bg-emerald-950/5 p-2 rounded-lg border border-emerald-950/15 shadow-inner">
+                                            {item.answer}
+                                          </div>
+                                          <div className="flex justify-end">
+                                            <button
+                                              onClick={() => {
+                                                setRevealedInCofre(prev => ({ ...prev, [item.id]: false }));
+                                                if (item.requireMasterPasswordToReveal) {
+                                                  setRevealedSecureRecords(prev => ({ ...prev, [item.id]: false }));
+                                                }
+                                              }}
+                                              className="text-[10px] font-bold text-red-400 hover:text-red-300 font-mono uppercase tracking-widest flex items-center space-x-1 cursor-pointer"
+                                            >
+                                              <EyeOff className="h-3 w-3" />
+                                              <span>Ocultar</span>
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
                                         <div className="flex items-center justify-between">
-                                          <div className="text-[10px] text-amber-500 italic flex items-center font-medium">
-                                            <Lock className="h-2.5 w-2.5 mr-1" /> Requer autenticação
+                                          <div className="text-[10px] text-slate-500 italic flex items-center font-medium font-mono uppercase tracking-wider">
+                                            {isLocked ? (
+                                              <>
+                                                <Lock className="h-2.5 w-2.5 mr-1 text-amber-500" /> Requer senha
+                                              </>
+                                            ) : (
+                                              <>
+                                                <EyeOff className="h-2.5 w-2.5 mr-1" /> Oculto
+                                              </>
+                                            )}
                                           </div>
                                           <button
                                             onClick={() => {
-                                              setActiveChallengeRecordId(item.id);
-                                              setChallengePassword('');
-                                              setChallengeError('');
+                                              if (isLocked) {
+                                                setActiveChallengeRecordId(item.id);
+                                                setChallengePassword('');
+                                                setChallengeError('');
+                                              } else {
+                                                setRevealedInCofre(prev => ({ ...prev, [item.id]: true }));
+                                              }
                                             }}
-                                            className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 font-mono uppercase tracking-wider"
+                                            className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 font-mono uppercase tracking-widest cursor-pointer"
                                           >
                                             Revelar
                                           </button>
-                                        </div>
-                                      ) : (
-                                        <div className="text-emerald-300 font-mono text-[11px] whitespace-pre-wrap select-all break-all leading-normal bg-emerald-950/5 p-2 rounded-lg border border-emerald-950/10 shadow-inner">
-                                          {item.answer}
                                         </div>
                                       )}
                                     </div>
