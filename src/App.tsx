@@ -1572,7 +1572,7 @@ export default function App() {
                             <span className="font-bold flex items-center text-xs tracking-wider text-amber-400 uppercase font-mono">
                               <AlertTriangle className="h-3.5 w-3.5 mr-1 text-amber-400 shrink-0" /> ATENÇÃO
                             </span>
-                            Se você perder esta senha mestra, as perguntas e respostas armazenadas no cofre estarão encriptadas para sempre e não poderão ser recuperadas.
+                            Se você perder esta senha mestra, os registros armazenados no cofre estarão encriptados para sempre e não poderão ser recuperadas.
                           </motion.div>
                         )}
                       </div>
