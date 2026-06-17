@@ -4,6 +4,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+// @ts-ignore
+import vaultLogo from './assets/images/vault_logo_1781668621232.jpg';
 import { 
   Shield, 
   Search, 
@@ -29,7 +31,8 @@ import {
   X,
   AlertTriangle,
   Cloud,
-  CloudOff
+  CloudOff,
+  Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -95,6 +98,7 @@ export default function App() {
     localStorage.getItem('secure_google_client_id') || (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || ''
   );
   const [showGDriveClientSetup, setShowGDriveClientSetup] = useState<boolean>(false);
+  const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // Custom dialogs (to bypass iframe-blocked native alert/confirm APIs)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -399,6 +403,7 @@ export default function App() {
     setRevealedSecureRecords({});
     setRevealedInCofre({});
     setSearchTerm('');
+    setShowSettings(false);
     isUnlocked && setIsUnlocked(false);
   };
 
@@ -753,8 +758,8 @@ export default function App() {
       
       {/* Immersive glow background blobs */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-emerald-500/10 blur-[130px] pointer-events-none -z-10 animate-pulse duration-[8s]" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-500/10 blur-[130px] pointer-events-none -z-10 animate-pulse duration-[12s]" />
-      <div className="absolute top-[45%] right-[15%] w-[35%] h-[35%] rounded-full bg-violet-600/5 blur-[110px] pointer-events-none -z-10" />
+      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-teal-500/10 blur-[130px] pointer-events-none -z-10 animate-pulse duration-[12s]" />
+      <div className="absolute top-[45%] right-[15%] w-[35%] h-[35%] rounded-full bg-emerald-600/5 blur-[110px] pointer-events-none -z-10" />
 
       {/* Cyberpunk abstract tech grid overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b0b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b0b_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none -z-10" />
@@ -814,44 +819,62 @@ export default function App() {
           <div className="w-full max-w-[420px] bg-[#0c0e14] border-0 sm:border-[12px] border-[#181d28] rounded-[42px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),0_0_40px_rgba(16,185,129,0.03)] relative overflow-hidden flex flex-col justify-between h-[820px] max-h-screen text-slate-100" id="smartphone-frame">
             
             {/* Top Ear Speaker & Punch hole Camera notch details */}
-            <div className="absolute top-0 inset-x-0 h-6 bg-[#06070a] flex items-center justify-between px-7 z-40 text-[10px] font-mono text-slate-400 select-none" id="phone-status-bar">
-              {/* Fake System Time */}
-              <span className="font-semibold text-slate-300">{systemTime}</span>
-              {/* Fake Notch Camera */}
-              <div className="w-2.5 h-2.5 rounded-full bg-slate-900 border border-slate-800" />
-              {/* Mobile Indicators */}
-              <div className="flex items-center space-x-1.5">
-                <Smartphone className="h-2.5 w-2.5" />
-                <span className="text-[9px]">5G</span>
-                <span className="text-[9px] text-emerald-400 font-bold">100%</span>
-              </div>
-            </div>
+            <div className="absolute top-0 inset-x-0 h-6 bg-[#06070a] z-40" id="phone-status-bar" />
 
             {/* Main Inside Viewport wrapper */}
-            <div className="flex-grow pt-8 pb-16 overflow-y-auto px-4.5 bg-[#080a0f] scrollbar-none flex flex-col justify-start" id="app-viewport">
+            <div 
+              className="flex-grow pt-8 overflow-y-auto px-4.5 bg-[#080a0f] scrollbar-none flex flex-col justify-start" 
+              style={{ paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 16px))' }}
+              id="app-viewport"
+            >
               
               {/* HEADER DA APLICAÇÃO */}
               {isUnlocked && (
                 <div className="flex items-center justify-between py-4 border-b border-slate-900/60 mb-4" id="view-header">
                   <div className="flex items-center space-x-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center text-slate-950 font-black text-sm shadow-[0_0_15px_rgba(16,185,129,0.2)]">
-                      C
-                    </div>
-                    <div>
-                      <h2 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h2>
-                      <span className="text-[9px] text-emerald-400 tracking-wider font-mono">ENCRYPTED VAULT LIVE</span>
+                    <img
+                      src={vaultLogo}
+                      alt="CRYPTORAPP"
+                      referrerPolicy="no-referrer"
+                      className="w-9 h-9 rounded-xl object-cover shadow-[0_0_15px_rgba(16,185,129,0.3)] filter contrast-125"
+                    />
+                    <div className="flex flex-col items-center justify-center h-9 gap-0.5">
+                      <span className="text-[11px] font-sans font-black tracking-widest text-[#10b981] uppercase leading-none">CRYPTOR</span>
+                      <span className="text-[11px] font-sans font-black tracking-widest text-[#10b981] uppercase leading-none">APP</span>
                     </div>
                   </div>
 
-                  <button 
-                    onClick={handleLockVault}
-                    className="p-1.5 px-3 bg-red-950/20 hover:bg-red-500/10 text-red-400 hover:text-red-300 rounded-xl text-[10px] border border-red-500/20 font-bold cursor-pointer transition flex items-center space-x-1"
-                    title="Bloquear Cofre"
-                    id="exit-vault-btn"
-                  >
-                    <LogOut className="h-3 w-3" />
-                    <span>Bloquear</span>
-                  </button>
+                  <div className="flex items-center space-x-3 text-left" id="header-right-side">
+                    {activeTab !== 'records' && (
+                      <div className="flex flex-col items-start justify-center h-9 gap-0.5 pr-1">
+                        <h2 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h2>
+                        <span className="text-[9px] text-emerald-400 tracking-wider font-mono leading-none">ENCRYPTED VAULT LIVE</span>
+                      </div>
+                    )}
+
+                    {activeTab === 'records' && (
+                      <div className="flex items-center space-x-2" id="header-actions">
+                        <button 
+                          onClick={() => setShowSettings(true)}
+                          className="p-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center shadow-sm"
+                          title="Configurações e Segurança"
+                          id="settings-vault-btn"
+                        >
+                          <Settings className="h-4 w-4" />
+                        </button>
+
+                        <button 
+                          onClick={handleLockVault}
+                          className="p-1.5 px-3 bg-red-950/20 hover:bg-red-500/10 text-red-400 hover:text-red-300 rounded-xl text-[10px] border border-red-500/20 font-bold cursor-pointer transition flex items-center space-x-1"
+                          title="Bloquear Cofre"
+                          id="exit-vault-btn"
+                        >
+                          <LogOut className="h-3 w-3" />
+                          <span>Bloquear</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -967,8 +990,8 @@ export default function App() {
                     id="login-pane"
                   >
                     <div className="text-center space-y-2">
-                      <div className="inline-block p-4.5 bg-gradient-to-tr from-indigo-500/10 to-violet-500/5 text-indigo-400 border border-indigo-500/20 rounded-2xl mb-1 shadow-[0_0_20px_rgba(99,102,241,0.05)]">
-                        <Lock className="h-8 w-8 text-indigo-400 animate-pulse" />
+                      <div className="inline-block p-4.5 bg-gradient-to-tr from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20 rounded-2xl mb-1 shadow-[0_0_20px_rgba(16,185,129,0.05)]">
+                        <Lock className="h-8 w-8 text-emerald-400 animate-pulse" />
                       </div>
                       <h2 className="text-lg font-display font-extrabold text-white tracking-tight">Cofre Codificado</h2>
                       <p className="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
@@ -985,7 +1008,7 @@ export default function App() {
                             placeholder="Inserir chave de acesso"
                             value={enteredPassword}
                             onChange={(e) => setEnteredPassword(e.target.value)}
-                            className="w-full bg-[#090b11] border border-slate-800/80 hover:border-slate-700/80 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 focus:outline-none rounded-xl px-4 py-3 text-sm text-center font-mono placeholder:font-sans transition-all duration-250 shadow-inner"
+                            className="w-full bg-[#090b11] border border-slate-800/80 hover:border-slate-700/80 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 focus:outline-none rounded-xl px-4 py-3 text-sm text-center font-mono placeholder:font-sans transition-all duration-250 shadow-inner"
                           />
                           <button
                             type="button"
@@ -1014,7 +1037,7 @@ export default function App() {
 
                       <button
                         type="submit"
-                        className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-500 hover:to-violet-400 text-white font-mono uppercase text-xs tracking-widest font-black rounded-xl transition duration-200 cursor-pointer shadow-[0_4px_25px_-5px_rgba(99,102,241,0.3)] active:scale-[0.98] flex items-center justify-center space-x-2"
+                        className="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-slate-950 font-mono uppercase text-xs tracking-widest font-black rounded-xl transition duration-200 cursor-pointer shadow-[0_4px_25px_-5px_rgba(16,185,129,0.3)] active:scale-[0.98] flex items-center justify-center space-x-2"
                         id="btn-login-vault"
                       >
                         <Unlock className="h-3.5 w-3.5" />
@@ -1391,9 +1414,8 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* Vault backups & complete management (Only visible when unlocked) */}
-                          <div className="pt-4 border-t border-slate-900/60 space-y-3">
-                            <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Configurações e Segurança</div>
+                          {/* Vault backups & complete management (Moved to top Settings gear icon) */}
+                          <div className="hidden" id="legacy-records-settings">
                             
                             <div className="grid grid-cols-2 gap-2">
                               {/* EXPORT BUTTON */}
@@ -1561,10 +1583,7 @@ export default function App() {
 
                     </div>
 
-                    {/* Bottom simple closing drawer */}
-                    <div className="pt-4 border-t border-slate-900/40 mt-4 text-center">
-                      <p className="text-[10px] text-slate-600 font-medium font-mono uppercase tracking-wide">Sua privacidade é inegociável. Dados E2E 256 bits.</p>
-                    </div>
+
 
                   </motion.div>
                 )}
@@ -1573,43 +1592,274 @@ export default function App() {
             </div>
             
             {/* Fake Android screen navigation bar details */}
-            <div className="absolute bottom-0 inset-x-0 h-11 bg-slate-950/90 flex items-center justify-around px-8 border-t border-slate-900/40 select-none text-slate-550" id="android-nav-bar">
-              <button 
-                onClick={() => {
-                  if(isUnlocked) {
-                    setActiveTab('search');
-                  }
+            {isUnlocked && (
+              <div 
+                className="absolute bottom-0 inset-x-0 bg-slate-950/98 flex flex-col justify-between border-t border-slate-900/40 select-none text-slate-500 pt-3.5 pb-2 shadow-[0_-8px_30px_rgba(0,0,0,0.6)] z-40 transition-all duration-300"
+                style={{
+                  height: 'calc(110px + env(safe-area-inset-bottom, 16px))',
+                  paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 16px))'
                 }}
-                className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'search' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                id="android-nav-bar"
               >
-                <Search className="h-4 w-4" />
-                <span className="text-[8px] font-mono tracking-wider uppercase mt-0.5">Buscar</span>
-              </button>
-              
-              <button 
-                onClick={() => {
-                  if(isUnlocked) {
-                    setActiveTab('add');
-                  }
-                }}
-                className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'add' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <Plus className="h-4 w-4" />
-                <span className="text-[8px] font-mono tracking-wider uppercase mt-0.5">Adicionar</span>
-              </button>
+                <div className="flex items-center justify-around w-full" id="nav-buttons-container">
+                  <button 
+                    onClick={() => {
+                      if(isUnlocked) {
+                        setActiveTab('search');
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'search' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    <Search className="h-4.5 w-4.5 text-inherit" />
+                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Buscar</span>
+                  </button>
+                  
+                  <button 
+                    onClick={() => {
+                      if(isUnlocked) {
+                        setActiveTab('add');
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'add' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    <Plus className="h-4.5 w-4.5 text-inherit" />
+                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Adicionar</span>
+                  </button>
 
-              <button 
-                onClick={() => {
-                  if(isUnlocked) {
-                    setActiveTab('records');
-                  }
-                }}
-                className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'records' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
-              >
-                <Database className="h-4 w-4" />
-                <span className="text-[8px] font-mono tracking-wider uppercase mt-0.5">Cofre</span>
-              </button>
-            </div>
+                  <button 
+                    onClick={() => {
+                      if(isUnlocked) {
+                        setActiveTab('records');
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'records' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    <Database className="h-4.5 w-4.5 text-inherit" />
+                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Cofre</span>
+                  </button>
+                </div>
+
+                <div className="w-full text-center pt-2 border-t border-slate-900/40" id="nav-footer-text">
+                  <span className="text-[8px] text-slate-500 font-medium font-mono uppercase tracking-wider block">
+                    Sua privacidade é inegociável • Dados E2E 256 bits
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* SETTINGS AND SECURITY OVERLAY PANEL */}
+            <AnimatePresence>
+              {isUnlocked && showSettings && (
+                <motion.div 
+                  initial={{ y: '100%' }}
+                  animate={{ y: 0 }}
+                  exit={{ y: '100%' }}
+                  transition={{ type: 'spring', damping: 28, stiffness: 240 }}
+                  className="absolute inset-0 bg-[#080a0f] z-50 flex flex-col pt-8 pb-4"
+                  id="settings-overlay-panel"
+                >
+                  {/* HEADER */}
+                  <div className="flex items-center justify-between px-4.5 py-4 border-b border-slate-900/60" id="settings-header">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="p-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl">
+                        <Settings className="h-4 w-4 animate-[spin_8s_linear_infinite]" />
+                      </div>
+                      <div>
+                        <h2 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Configurações e Segurança</h2>
+                        <span className="text-[9px] text-emerald-400 tracking-wider font-mono">RECURSOS DE SEGURANÇA</span>
+                      </div>
+                    </div>
+                    
+                    <button 
+                      onClick={() => setShowSettings(false)}
+                      className="p-1.5 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center shadow-sm"
+                      title="Fechar Configurações"
+                      id="close-settings-btn"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* BODY CONTENT - Scrollable */}
+                  <div className="flex-grow overflow-y-auto px-4.5 py-4 space-y-5 scrollbar-none" id="settings-body">
+                    
+                    {/* CARD 1: JSON BACKUP MANAGEMENT */}
+                    <div className="space-y-2" id="json-backup-section">
+                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Backup e Importação Local</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* EXPORT BUTTON */}
+                        <button
+                          onClick={handleExportBackup}
+                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
+                          id="settings-export-btn"
+                        >
+                          <Download className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>Exportar JSON</span>
+                        </button>
+
+                        {/* IMPORT BUTTON */}
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
+                          id="settings-import-btn"
+                        >
+                          <Upload className="h-3.5 w-3.5 text-blue-400" />
+                          <span>Importar JSON</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* CARD 2: GOOGLE DRIVE BACKUP */}
+                    <div className="space-y-2.5" id="gdrive-backup-section">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1 flex-wrap gap-1">
+                          <Cloud className="h-3 w-3 text-emerald-400" />
+                          <span>Backup na Nuvem (Google Drive)</span>
+                        </div>
+                        {gdriveAccessToken ? (
+                          <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
+                            Conectado
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
+                            Desconectado
+                          </span>
+                        )}
+                      </div>
+
+                      {/* GDrive status info / instructions */}
+                      {gdriveAccessToken ? (
+                        <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2 text-left">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="text-[10px] text-slate-400">Conta conectada:</div>
+                              <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{gdriveUserEmail}</div>
+                            </div>
+                            <button 
+                              onClick={handleDisconnectGDrive}
+                              className="text-[9px] font-bold text-red-400 hover:underline uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer"
+                            >
+                              <span>Desconectar</span>
+                            </button>
+                          </div>
+
+                          {gdriveLastSync && (
+                            <div className="text-[9px] text-slate-500 font-mono">
+                              Último Sincronismo: <span className="text-slate-400 font-semibold">{gdriveLastSync}</span>
+                            </div>
+                          )}
+
+                          {gdriveIsSyncing && gdriveStatusMessage && (
+                            <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
+                              <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                              <span>{gdriveStatusMessage}</span>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-2 pt-1.5">
+                            <button
+                              onClick={handleGDriveBackup}
+                              disabled={gdriveIsSyncing}
+                              className="py-2 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${gdriveIsSyncing ? 'animate-spin' : ''}`} />
+                              <span>Salvar na Nuvem</span>
+                            </button>
+                            <button
+                              onClick={handleGDriveRestore}
+                              disabled={gdriveIsSyncing}
+                              className="py-2 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
+                            >
+                              <Download className="h-3 w-3" />
+                              <span>Baixar da Nuvem</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-2 text-left">
+                          <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                            Salve seus dados criptografados com segurança de ponta-a-ponta na sua própria nuvem.
+                          </p>
+
+                          <button
+                            onClick={() => handleConnectGDrive()}
+                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
+                          >
+                            <Cloud className="h-3.5 w-3.5" />
+                            <span>Autenticar & Conectar</span>
+                          </button>
+
+                          <div className="pt-1.5 border-t border-slate-900/60 font-sans">
+                            <button
+                              type="button"
+                              onClick={() => setShowGDriveClientSetup(!showGDriveClientSetup)}
+                              className="w-full text-center text-[9px] text-slate-500 hover:text-slate-400 uppercase font-bold tracking-wider font-mono py-1 cursor-pointer"
+                            >
+                              {showGDriveClientSetup ? 'Ocultar Configurações de API ✕' : 'Ver ID do Cliente Google \u2192'}
+                            </button>
+
+                            {showGDriveClientSetup && (
+                              <motion.div 
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                className="space-y-2 pt-2 text-left"
+                              >
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+                                    Google OAuth 2.0 Client ID
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={gdriveClientId}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setGdriveClientId(val);
+                                      localStorage.setItem('secure_google_client_id', val);
+                                    }}
+                                    placeholder="Ex: 749364...apps.googleusercontent.com"
+                                    className="w-full bg-[#05070a] border border-slate-900 focus:border-slate-800 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <p className="text-[9px] text-slate-500 leading-normal font-sans">
+                                  Nós usamos o escopo seguro e limitado <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
+                                </p>
+                              </motion.div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* DANGER ZONE */}
+                    <div className="space-y-2 pt-2" id="danger-settings-section">
+                      <div className="text-[10px] uppercase font-bold text-red-500 tracking-wider">Zona de Risco</div>
+                      
+                      <button
+                        onClick={handlePurgeVault}
+                        className="w-full py-2.5 bg-red-950/20 hover:bg-red-950/30 border border-red-900/30 text-red-400 text-[10px] rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold"
+                        id="settings-purge-btn"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                        <span>Deletar Todo o Cofre (Apagar Dados)</span>
+                      </button>
+                    </div>
+
+                    {/* IMPORT STATUS FEEDBACK */}
+                    {importStatus && (
+                      <div className={`p-2.5 border text-[10px] text-center rounded-xl font-mono ${
+                        importStatus.success ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400' : 'bg-red-950/20 border-red-500/20 text-red-400'
+                      }`}>
+                        {importStatus.message}
+                      </div>
+                    )}
+
+                  </div>
+
+
+
+                </motion.div>
+              )}
+            </AnimatePresence>
 
           </div>
 
