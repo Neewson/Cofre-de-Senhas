@@ -36,7 +36,9 @@ import {
   CloudOff,
   Settings,
   User,
-  ArrowLeft
+  ArrowLeft,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -186,6 +188,9 @@ export default function App() {
     '629248809839-al3q9ad4e9es6763hom58t4fohsth9r2.apps.googleusercontent.com'
   );
   const [showGDriveClientSetup, setShowGDriveClientSetup] = useState<boolean>(false);
+  const [gdriveCollapsed, setGdriveCollapsed] = useState<boolean>(true);
+  const [firebaseCollapsed, setFirebaseCollapsed] = useState<boolean>(true);
+  const [cryptoCollapsed, setCryptoCollapsed] = useState<boolean>(true);
 
   // Firebase Cloud Backup & Sync states
   const [fbUser, setFbUser] = useState<any>(null);
@@ -1426,14 +1431,16 @@ export default function App() {
 
                     {(activeTab === 'records' || activeTab === 'profile') && (
                       <div className="flex items-center space-x-2" id="header-actions">
-                        <button 
-                          onClick={() => setShowSettings(true)}
-                          className="p-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center shadow-sm"
-                          title="Configurações e Segurança"
-                          id="settings-vault-btn"
-                        >
-                          <Settings className="h-4 w-4" />
-                        </button>
+                        {activeTab === 'profile' && (
+                          <button 
+                            onClick={() => setShowSettings(true)}
+                            className="p-2 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-emerald-400 border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center shadow-sm"
+                            title="Configurações e Segurança"
+                            id="settings-vault-btn"
+                          >
+                            <Settings className="h-4 w-4" />
+                          </button>
+                        )}
 
                         <button 
                           onClick={handleLockVault}
@@ -1707,35 +1714,37 @@ export default function App() {
                     <div className="flex-grow space-y-4">
                       
                       {/* Sub-Header Tabs */}
-                      <div className="grid grid-cols-3 gap-1 p-1 bg-[#090b11] border border-slate-800/80 rounded-xl" id="nav-tabs">
-                        <button
-                          onClick={() => setActiveTab('search')}
-                          className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
-                            activeTab === 'search' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-[0_2px_10px_rgba(16,185,129,0.25)]' : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          Consulta
-                        </button>
-                        <button
-                          onClick={() => setActiveTab('add')}
-                          className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
-                            activeTab === 'add' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-[0_2px_10px_rgba(16,185,129,0.25)]' : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          + Novo
-                        </button>
-                        <button
-                          onClick={() => {
-                            setActiveTab('records');
-                            setSearchTerm('');
-                          }}
-                          className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
-                            activeTab === 'records' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-[0_2px_10px_rgba(16,185,129,0.25)]' : 'text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          Cofre ({decryptedRecords.length})
-                        </button>
-                      </div>
+                      {activeTab !== 'profile' && (
+                        <div className="grid grid-cols-3 gap-1 p-1 bg-[#090b11] border border-slate-800/80 rounded-xl" id="nav-tabs">
+                          <button
+                            onClick={() => setActiveTab('search')}
+                            className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
+                              activeTab === 'search' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-[0_2px_10px_rgba(16,185,129,0.25)]' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            Consulta
+                          </button>
+                          <button
+                            onClick={() => setActiveTab('add')}
+                            className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
+                              activeTab === 'add' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-[0_2px_10px_rgba(16,185,129,0.25)]' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            + Novo
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveTab('records');
+                              setSearchTerm('');
+                            }}
+                            className={`py-2 text-[10px] font-mono tracking-wider uppercase rounded-lg cursor-pointer transition-all duration-200 text-center ${
+                              activeTab === 'records' ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black shadow-[0_2px_10px_rgba(16,185,129,0.25)]' : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            Cofre ({decryptedRecords.length})
+                          </button>
+                        </div>
+                      )}
 
                       {/* RENDERING TAB CONTENT */}
                       
@@ -2241,6 +2250,136 @@ export default function App() {
                           <div className="flex justify-between items-center bg-[#090b11]/40 p-3 rounded-xl border border-slate-900/40">
                             <div>
                               <h3 className="text-xs font-sans font-bold tracking-wider text-emerald-400 uppercase">Perfil & Conta</h3>
+                              <p className="text-[9px] text-slate-400 font-semibold leading-tight font-sans">Configuração de sincronização e assinatura</p>
+                            </div>
+                            <span className="text-[8px] px-2 py-0.5 bg-[#090b11] border border-slate-800/80 text-emerald-400 rounded-full font-mono font-bold">
+                              {fbUser ? 'CONECTADO' : 'LOCAL'}
+                            </span>
+                          </div>
+
+                          {/* Stripe Billing Panel */}
+                          <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left animate-fade-in shadow-md" id="stripe-billing-section">
+                            <div className="flex items-center justify-between border-b border-slate-950 pb-2">
+                              <div className="flex items-center space-x-1.5 uppercase font-bold text-slate-400 text-[10px] tracking-wider font-sans">
+                                <CreditCard className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                                <span>Assinatura & Faturamento (Stripe)</span>
+                              </div>
+                              {hasActiveSubscription !== null && (
+                                <span className={`text-[8.5px] font-mono font-bold px-2 py-0.5 rounded-full uppercase ${
+                                  hasActiveSubscription 
+                                    ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-900/35 animate-pulse' 
+                                    : 'text-slate-500 bg-slate-950/40 border border-slate-900/60'
+                                }`}>
+                                  {hasActiveSubscription ? 'Premium' : 'Gratuito'}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="space-y-3 pt-1">
+                              {/* If status is loading or hasn't checked it yet */}
+                              {hasActiveSubscription === null && isLoadingSub && (
+                                <div className="text-[10px] text-slate-400 font-mono flex items-center space-x-2 py-1">
+                                  <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                                  <span>Consultando status no Stripe...</span>
+                                </div>
+                              )}
+
+                              {/* Free Tier Upgrade Card */}
+                              {hasActiveSubscription === false && (
+                                <div className="space-y-3 animate-fade-in">
+                                  <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                                    Seu Plano: <strong className="text-white">Gratuito (Somente local)</strong>. 
+                                    Faça o upgrade para habilitar backup e sincronização em múltiplos aparelhos pela nuvem criptografada do Firebase.
+                                  </p>
+                                  
+                                  <div className="bg-[#05070a] border border-slate-900 p-2.5 rounded-lg space-y-1.5 font-sans">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-[10px] font-bold text-emerald-400">Plano Premium Cloud Sync</span>
+                                      <span className="text-xs font-mono font-extrabold text-white">R$ 19,90 <span className="text-[9px] text-slate-500">/mês</span></span>
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 leading-tight">
+                                      Assinatura mensal recorrente processada pelo Stripe de forma 100% segura. Cancele quando quiser.
+                                    </p>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={handleUpgradeToPremium}
+                                    disabled={isCheckingOut || isLoadingSub}
+                                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                                  >
+                                    {isCheckingOut ? (
+                                      <>
+                                        <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-950" />
+                                        <span>Carregando Stripe...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CreditCard className="h-3.5 w-3.5" />
+                                        <span>Assinar Premium Agora</span>
+                                      </>
+                                    )}
+                                  </button>
+                                  {!fbUser && (
+                                    <p className="text-[8.5px] text-amber-500 text-center font-bold uppercase tracking-wider font-sans leading-none mt-1 animate-pulse">
+                                      ⚠ Conecte sua conta Firebase para liberar assinatura
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Active Premium Tier UI */}
+                              {hasActiveSubscription === true && (
+                                <div className="space-y-3 animate-fade-in">
+                                  <div className="bg-emerald-950/25 border border-emerald-900/30 p-3 rounded-lg space-y-2">
+                                    <div className="flex items-center space-x-1.5 text-xs text-emerald-400 font-bold leading-none">
+                                      <Check className="h-4 w-4 text-emerald-400" />
+                                      <span>Premium Ativo no Stripe</span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 leading-normal">
+                                      Obrigado por apoiar nosso software! Todos os recursos de backup e restauração na nuvem estão totalmente ativos.
+                                    </p>
+                                    
+                                    {subscriptionInfo?.nextPayment && (
+                                      <div className="text-[9px] text-slate-500 font-mono border-t border-slate-950 pt-1">
+                                        Próximo faturamento: <strong className="text-slate-400">{subscriptionInfo.nextPayment}</strong>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={handleOpenBillingPortal}
+                                    disabled={isCheckingOut || isLoadingSub}
+                                    className="w-full py-2 bg-slate-950 hover:bg-slate-900 active:scale-[0.98] text-slate-300 text-[10px] border border-slate-900 rounded-lg font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                                  >
+                                    {isCheckingOut ? (
+                                      <RefreshCw className="h-3 w-3 animate-spin text-slate-400" />
+                                    ) : (
+                                      <ArrowUpRight className="h-3 w-3 text-emerald-400" />
+                                    )}
+                                    <span>Gerenciar Assinatura (Portal Stripe)</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Fallback offline/keys missing */}
+                              {!fbUser && hasActiveSubscription === null && !isLoadingSub && (
+                                <p className="text-[9px] text-slate-500 text-center leading-normal font-sans py-1">
+                                  Acesse com sua conta na seção de backup em nuvem para consultar planos de upgrade do Stripe.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* DEPRECATED_OLD_PROFILE_CONTENT_START */}
+                      {false && activeTab === 'profile' && (
+                        <div className="space-y-4 text-left animate-fade-in" id="tab-profile">
+                          <div className="flex justify-between items-center bg-[#090b11]/40 p-3 rounded-xl border border-slate-900/40">
+                            <div>
+                              <h3 className="text-xs font-sans font-bold tracking-wider text-emerald-400 uppercase">Perfil & Conta</h3>
                               <p className="text-[9px] text-slate-400 font-semibold leading-tight">Configuração de sincronização e assinatura</p>
                             </div>
                             <span className="text-[8px] px-2 py-0.5 bg-[#090b11] border border-slate-800/80 text-emerald-400 rounded-full font-mono font-bold">
@@ -2672,406 +2811,321 @@ export default function App() {
 
                     {/* CARD 2: GOOGLE DRIVE CLOUD BACKUP */}
                     <div className="space-y-2.5" id="gdrive-backup-section">
-                      <div className="flex items-center justify-between">
-                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
-                          <Cloud className="h-3.5 w-3.5 text-emerald-400" />
+                      <div 
+                        onClick={() => setGdriveCollapsed(!gdriveCollapsed)}
+                        className="flex items-center justify-between p-3 bg-[#090b11]/80 hover:bg-slate-900 border border-slate-900/80 rounded-xl cursor-pointer transition duration-150 select-none"
+                      >
+                        <div className="text-[10px] uppercase font-bold text-slate-300 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
+                          <Cloud className={`h-3.5 w-3.5 ${gdriveAccessToken ? 'text-emerald-400' : 'text-slate-500'}`} />
                           <span>Backup na Nuvem (Google Drive)</span>
                         </div>
-                        {gdriveAccessToken ? (
-                          <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
-                            Conectado
-                          </span>
-                        ) : (
-                          <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
-                            Desconectado
-                          </span>
-                        )}
+                        <div className="flex items-center space-x-2">
+                          {gdriveAccessToken ? (
+                            <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
+                              Conectado
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
+                              Desconectado
+                            </span>
+                          )}
+                          {gdriveCollapsed ? (
+                            <ChevronDown className="h-4 w-4 text-slate-500" />
+                          ) : (
+                            <ChevronUp className="h-4 w-4 text-emerald-400" />
+                          )}
+                        </div>
                       </div>
 
                       {/* GDrive status info / instructions */}
-                      {gdriveAccessToken ? (
-                        <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="text-[10px] text-slate-400">Conta conectada:</div>
-                              <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{gdriveUserEmail}</div>
-                            </div>
-                            <button 
-                              onClick={handleDisconnectGDrive}
-                              className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer"
-                            >
-                              <span>Desconectar</span>
-                            </button>
-                          </div>
-
-                          {gdriveLastSync && (
-                            <div className="text-[9px] text-slate-500 font-mono">
-                              Último Sincronismo: <span className="text-slate-400 font-semibold">{gdriveLastSync}</span>
-                            </div>
-                          )}
-
-                          {gdriveIsSyncing && gdriveStatusMessage && (
-                            <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
-                              <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
-                              <span>{gdriveStatusMessage}</span>
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <button
-                              onClick={handleGDriveBackup}
-                              disabled={gdriveIsSyncing}
-                              className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
-                            >
-                              <RefreshCw className={`h-3 w-3 ${gdriveIsSyncing ? 'animate-spin' : ''}`} />
-                              <span>Salvar Nuvem</span>
-                            </button>
-                            <button
-                              onClick={handleGDriveRestore}
-                              disabled={gdriveIsSyncing}
-                              className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
-                            >
-                              <Download className="h-3 w-3" />
-                              <span>Baixar Nuvem</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
-                          <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                            Salve e sincronize seus dados criptografados AES-256 com segurança de ponta-a-ponta na sua conta Google Drive pessoal.
-                          </p>
-
-                          <button
-                            onClick={() => handleConnectGDrive()}
-                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
-                          >
-                            <Cloud className="h-3.5 w-3.5" />
-                            <span>Autenticar & Conectar</span>
-                          </button>
-
-                          <div className="pt-1.5 border-t border-slate-900/60">
-                            <button
-                              onClick={() => setShowGDriveClientSetup(!showGDriveClientSetup)}
-                              className="w-full text-center text-[9px] text-slate-500 hover:text-slate-400 uppercase font-bold tracking-wider font-mono py-1 cursor-pointer"
-                            >
-                              {showGDriveClientSetup ? 'Ocultar ID do Cliente Google ✕' : 'Ver ID do Cliente Google &rarr;'}
-                            </button>
-
-                            {showGDriveClientSetup && (
-                              <motion.div 
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: 'auto' }}
-                                className="space-y-2 pt-2 text-left"
-                              >
-                                <div className="space-y-1">
-                                  <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                                    Google OAuth 2.0 Client ID
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={gdriveClientId}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setGdriveClientId(val);
-                                      localStorage.setItem('secure_google_client_id', val);
-                                    }}
-                                    placeholder="Ex: 749364...apps.googleusercontent.com"
-                                    className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none focus:border-slate-800"
-                                  />
+                      {!gdriveCollapsed && (
+                        <div className="space-y-2.5 animate-fade-in">
+                          {gdriveAccessToken ? (
+                            <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="text-[10px] text-slate-400">Conta conectada:</div>
+                                  <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{gdriveUserEmail}</div>
                                 </div>
-                                <p className="text-[9px] text-slate-500 leading-normal font-sans">
-                                  Usamos o escopo seguro e restrito <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
-                                </p>
-                              </motion.div>
-                            )}
-                          </div>
+                                <button 
+                                  onClick={handleDisconnectGDrive}
+                                  className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer"
+                                >
+                                  <span>Desconectar</span>
+                                </button>
+                              </div>
+
+                              {gdriveLastSync && (
+                                <div className="text-[9px] text-slate-500 font-mono">
+                                  Último Sincronismo: <span className="text-slate-400 font-semibold">{gdriveLastSync}</span>
+                                </div>
+                              )}
+
+                              {gdriveIsSyncing && gdriveStatusMessage && (
+                                <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
+                                  <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                                  <span>{gdriveStatusMessage}</span>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                <button
+                                  onClick={handleGDriveBackup}
+                                  disabled={gdriveIsSyncing}
+                                  className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <RefreshCw className={`h-3 w-3 ${gdriveIsSyncing ? 'animate-spin' : ''}`} />
+                                  <span>Salvar Nuvem</span>
+                                </button>
+                                <button
+                                  onClick={handleGDriveRestore}
+                                  disabled={gdriveIsSyncing}
+                                  className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  <span>Baixar Nuvem</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
+                              <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                                Salve e sincronize seus dados criptografados AES-256 com segurança de ponta-a-ponta na sua conta Google Drive pessoal.
+                              </p>
+
+                              <button
+                                onClick={() => handleConnectGDrive()}
+                                className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
+                              >
+                                <Cloud className="h-3.5 w-3.5" />
+                                <span>Autenticar & Conectar</span>
+                              </button>
+
+                              <div className="pt-1.5 border-t border-slate-900/60">
+                                <button
+                                  onClick={() => setShowGDriveClientSetup(!showGDriveClientSetup)}
+                                  className="w-full text-center text-[9px] text-slate-500 hover:text-slate-400 uppercase font-bold tracking-wider font-mono py-1 cursor-pointer"
+                                >
+                                  {showGDriveClientSetup ? 'Ocultar ID do Cliente Google ✕' : 'Ver ID do Cliente Google &rarr;'}
+                                </button>
+
+                                {showGDriveClientSetup && (
+                                  <motion.div 
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    className="space-y-2 pt-2 text-left"
+                                  >
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                        Google OAuth 2.0 Client ID
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={gdriveClientId}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setGdriveClientId(val);
+                                          localStorage.setItem('secure_google_client_id', val);
+                                        }}
+                                        placeholder="Ex: 749364...apps.googleusercontent.com"
+                                        className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none focus:border-slate-800"
+                                      />
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 leading-normal font-sans">
+                                      Usamos o escopo seguro e restrito <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
+                                    </p>
+                                  </motion.div>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
 
                     {/* CARD 3: FIREBASE CLOUD SYNC */}
                     <div className="space-y-2.5" id="firebase-sync-section">
-                      <div className="flex items-center justify-between">
-                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
-                          <Cloud className="h-4 w-4 text-emerald-400" />
+                      <div 
+                        onClick={() => setFirebaseCollapsed(!firebaseCollapsed)}
+                        className="flex items-center justify-between p-3 bg-[#090b11]/80 hover:bg-slate-900 border border-slate-900/80 rounded-xl cursor-pointer transition duration-150 select-none"
+                      >
+                        <div className="text-[10px] uppercase font-bold text-slate-300 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
+                          <Cloud className={`h-4 w-4 ${fbUser ? 'text-emerald-400' : 'text-slate-500'}`} />
                           <span>Backup na Nuvem (Firebase)</span>
                         </div>
-                        {fbUser ? (
-                          <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
-                            Conectado
-                          </span>
-                        ) : (
-                          <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
-                            Desconectado
-                          </span>
-                        )}
+                        <div className="flex items-center space-x-2">
+                          {fbUser ? (
+                            <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
+                              Conectado
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
+                              Desconectado
+                            </span>
+                          )}
+                          {firebaseCollapsed ? (
+                            <ChevronDown className="h-4 w-4 text-slate-500" />
+                          ) : (
+                            <ChevronUp className="h-4 w-4 text-emerald-400" />
+                          )}
+                        </div>
                       </div>
 
                       {/* Firebase sync panel */}
-                      {fbUser ? (
-                        <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <div className="text-[10px] text-slate-400">Conta sincronizada:</div>
-                              <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{fbUser.email}</div>
-                            </div>
-                            <button 
-                              onClick={handleFbLogout}
-                              disabled={fbIsLoading}
-                              className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer disabled:opacity-50"
-                            >
-                              <span>Sair</span>
-                            </button>
-                          </div>
-
-                          {fbLastSync && (
-                            <div className="text-[9px] text-slate-500 font-mono">
-                              Último Sincronismo: <span className="text-slate-400 font-semibold">{fbLastSync}</span>
-                            </div>
-                          )}
-
-                          {fbIsLoading && (
-                            <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
-                              <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
-                              <span>Sincronizando dados com Firebase...</span>
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-2 gap-2 pt-1">
-                            <button
-                              onClick={handleFbBackup}
-                              disabled={fbIsLoading}
-                              className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
-                            >
-                              <RefreshCw className={`h-3 w-3 ${fbIsLoading ? 'animate-spin' : ''}`} />
-                              <span>Salvar Nuvem</span>
-                            </button>
-                            <button
-                              onClick={handleFbRestore}
-                              disabled={fbIsLoading}
-                              className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
-                            >
-                              <Download className="h-3 w-3" />
-                              <span>Baixar Nuvem</span>
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
-                          <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                            Crie sua conta ou faça login para sincronizar e salvar com segurança o seu cofre end-to-end criptografado (AES-256) na nuvem do Firebase.
-                          </p>
-
-                          <form onSubmit={fbMode === 'login' ? handleFbLogin : handleFbRegister} className="space-y-3">
-                            <div className="space-y-2">
-                              <div>
-                                <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                                  E-mail
-                                </label>
-                                <input
-                                  type="email"
-                                  required
-                                  value={fbEmail}
-                                  onChange={(e) => setFbEmail(e.target.value)}
-                                  placeholder="Digite seu e-mail"
-                                  className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
-                                />
+                      {!firebaseCollapsed && (
+                        <div className="space-y-2.5 animate-fade-in">
+                          {fbUser ? (
+                            <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="text-[10px] text-slate-400">Conta sincronizada:</div>
+                                  <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{fbUser.email}</div>
+                                </div>
+                                <button 
+                                  onClick={handleFbLogout}
+                                  disabled={fbIsLoading}
+                                  className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <span>Sair</span>
+                                </button>
                               </div>
 
-                              <div>
-                                <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                                  Senha do Firebase Sync
-                                </label>
-                                <input
-                                  type="password"
-                                  required
-                                  value={fbPassword}
-                                  onChange={(e) => setFbPassword(e.target.value)}
-                                  placeholder="Ao menos 6 caracteres"
-                                  className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
-                                />
-                              </div>
-                            </div>
-
-                            <button
-                              type="submit"
-                              disabled={fbIsLoading}
-                              className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
-                            >
-                              {fbIsLoading ? (
-                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Cloud className="h-3.5 w-3.5" />
+                              {fbLastSync && (
+                                <div className="text-[9px] text-slate-500 font-mono">
+                                  Último Sincronismo: <span className="text-slate-400 font-semibold">{fbLastSync}</span>
+                                </div>
                               )}
-                              <span>{fbMode === 'login' ? 'Entrar & Sincronizar' : 'Criar Conta & Sincronizar'}</span>
-                            </button>
-                          </form>
 
-                          <div className="relative my-3">
-                            <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                              <div className="w-full border-t border-slate-900"></div>
+                              {fbIsLoading && (
+                                <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
+                                  <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                                  <span>Sincronizando dados com Firebase...</span>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                <button
+                                  onClick={handleFbBackup}
+                                  disabled={fbIsLoading}
+                                  className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <RefreshCw className={`h-3 w-3 ${fbIsLoading ? 'animate-spin' : ''}`} />
+                                  <span>Salvar Nuvem</span>
+                                </button>
+                                <button
+                                  onClick={handleFbRestore}
+                                  disabled={fbIsLoading}
+                                  className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  <span>Baixar Nuvem</span>
+                                </button>
+                              </div>
                             </div>
-                            <div className="relative flex justify-center text-xs uppercase font-mono">
-                              <span className="bg-[#0b0e14] px-2 text-slate-500 font-semibold text-[9px]">ou use</span>
+                          ) : (
+                            <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
+                              <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                                Crie sua conta ou faça login para sincronizar e salvar com segurança o seu cofre end-to-end criptografado (AES-256) na nuvem do Firebase.
+                              </p>
+
+                              <form onSubmit={fbMode === 'login' ? handleFbLogin : handleFbRegister} className="space-y-3">
+                                <div className="space-y-2">
+                                  <div>
+                                    <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                      E-mail
+                                    </label>
+                                    <input
+                                      type="email"
+                                      required
+                                      value={fbEmail}
+                                      onChange={(e) => setFbEmail(e.target.value)}
+                                      placeholder="Digite seu e-mail"
+                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                      Senha do Firebase Sync
+                                    </label>
+                                    <input
+                                      type="password"
+                                      required
+                                      value={fbPassword}
+                                      onChange={(e) => setFbPassword(e.target.value)}
+                                      placeholder="Ao menos 6 caracteres"
+                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
+                                    />
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="submit"
+                                  disabled={fbIsLoading}
+                                  className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
+                                >
+                                  {fbIsLoading ? (
+                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Cloud className="h-3.5 w-3.5" />
+                                  )}
+                                  <span>{fbMode === 'login' ? 'Entrar & Sincronizar' : 'Criar Conta & Sincronizar'}</span>
+                                </button>
+                              </form>
+
+                              <div className="relative my-3">
+                                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                                  <div className="w-full border-t border-slate-900"></div>
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase font-mono">
+                                  <span className="bg-[#0b0e14] px-2 text-slate-500 font-semibold text-[9px]">ou use</span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={handleGoogleSignIn}
+                                disabled={fbIsLoading}
+                                className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+                              >
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
+                                  <path
+                                    fill="currentColor"
+                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
+                                  />
+                                </svg>
+                                <span>Entrar com o Google</span>
+                              </button>
+
+                              <div className="text-center pt-2.5 border-t border-slate-900 flex items-center justify-center space-x-2 text-[9.5px] text-slate-400">
+                                <span>{fbMode === 'login' ? 'Não possui conta?' : 'Já possui conta?'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setFbMode(fbMode === 'login' ? 'register' : 'login')}
+                                  className="font-bold text-emerald-400 hover:underline uppercase tracking-wider font-mono cursor-pointer"
+                                >
+                                  {fbMode === 'login' ? 'Cadastrar' : 'Entrar'}
+                                </button>
+                              </div>
                             </div>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={handleGoogleSignIn}
-                            disabled={fbIsLoading}
-                            className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
-                          >
-                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
-                              <path
-                                fill="currentColor"
-                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                              />
-                              <path
-                                fill="currentColor"
-                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                              />
-                              <path
-                                fill="currentColor"
-                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
-                              />
-                              <path
-                                fill="currentColor"
-                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
-                              />
-                            </svg>
-                            <span>Entrar com o Google</span>
-                          </button>
-
-                          <div className="text-center pt-2.5 border-t border-slate-900 flex items-center justify-center space-x-2 text-[9.5px] text-slate-400">
-                            <span>{fbMode === 'login' ? 'Não possui conta?' : 'Já possui conta?'}</span>
-                            <button
-                              type="button"
-                              onClick={() => setFbMode(fbMode === 'login' ? 'register' : 'login')}
-                              className="font-bold text-emerald-400 hover:underline uppercase tracking-wider font-mono cursor-pointer"
-                            >
-                              {fbMode === 'login' ? 'Cadastrar' : 'Entrar'}
-                            </button>
-                          </div>
+                          )}
                         </div>
                       )}
                     </div>
 
-                    {/* CARD: STRIPE BILLING & PREMIUM SUBSCRIPTION */}
-                    <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left animate-fade-in" id="stripe-billing-section">
-                      <div className="flex items-center justify-between border-b border-slate-950 pb-2">
-                        <div className="flex items-center space-x-1.5 uppercase font-bold text-slate-400 text-[10px] tracking-wider font-sans">
-                          <CreditCard className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-                          <span>Assinatura & Faturamento (Stripe)</span>
-                        </div>
-                        {hasActiveSubscription !== null && (
-                          <span className={`text-[8.5px] font-mono font-bold px-2 py-0.5 rounded-full uppercase ${
-                            hasActiveSubscription 
-                              ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-900/35 animate-pulse' 
-                              : 'text-slate-500 bg-slate-950/40 border border-slate-900/60'
-                          }`}>
-                            {hasActiveSubscription ? 'Premium' : 'Gratuito'}
-                          </span>
-                        )}
-                      </div>
 
-                      <div className="space-y-3 pt-1">
-                        {/* If status is loading or hasn't checked it yet */}
-                        {hasActiveSubscription === null && isLoadingSub && (
-                          <div className="text-[10px] text-slate-400 font-mono flex items-center space-x-2 py-1">
-                            <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
-                            <span>Consultando status no Stripe...</span>
-                          </div>
-                        )}
-
-                        {/* Free Tier Upgrade Card */}
-                        {hasActiveSubscription === false && (
-                          <div className="space-y-3 animate-fade-in">
-                            <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                              Seu Plano: <strong className="text-white">Gratuito (Somente local)</strong>. 
-                              Faça o upgrade para habilitar backup e sincronização em múltiplos aparelhos pela nuvem criptografada do Firebase.
-                            </p>
-                            
-                            <div className="bg-[#05070a] border border-slate-900 p-2.5 rounded-lg space-y-1.5">
-                              <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold text-emerald-400">Plano Premium Cloud Sync</span>
-                                <span className="text-xs font-mono font-extrabold text-white">R$ 19,90 <span className="text-[9px] text-slate-500">/mês</span></span>
-                              </div>
-                              <p className="text-[9px] text-slate-500 leading-tight">
-                                Assinatura mensal recorrente processada pelo Stripe de forma 100% segura. Cancele quando quiser.
-                              </p>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={handleUpgradeToPremium}
-                              disabled={isCheckingOut || isLoadingSub}
-                              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer disabled:opacity-50"
-                            >
-                              {isCheckingOut ? (
-                                <>
-                                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-950" />
-                                  <span>Carregando Stripe...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <CreditCard className="h-3.5 w-3.5" />
-                                  <span>Assinar Premium Agora</span>
-                                </>
-                              )}
-                            </button>
-                            {!fbUser && (
-                              <p className="text-[8.5px] text-amber-500 text-center font-bold uppercase tracking-wider font-sans leading-none mt-1 animate-pulse">
-                                ⚠ Conecte sua conta Firebase para liberar assinatura
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Active Premium Tier UI */}
-                        {hasActiveSubscription === true && (
-                          <div className="space-y-3 animate-fade-in">
-                            <div className="bg-emerald-950/25 border border-emerald-900/30 p-3 rounded-lg space-y-2">
-                              <div className="flex items-center space-x-1.5 text-xs text-emerald-400 font-bold leading-none">
-                                <Check className="h-4 w-4 text-emerald-400" />
-                                <span>Premium Ativo no Stripe</span>
-                              </div>
-                              <p className="text-[10px] text-slate-400 leading-normal">
-                                Obrigado por apoiar nosso software! Todos os recursos de backup e restauração na nuvem estão totalmente ativos.
-                              </p>
-                              
-                              {subscriptionInfo?.nextPayment && (
-                                <div className="text-[9px] text-slate-500 font-mono border-t border-slate-950 pt-1">
-                                  Próximo faturamento: <strong className="text-slate-400">{subscriptionInfo.nextPayment}</strong>
-                                </div>
-                              )}
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={handleOpenBillingPortal}
-                              disabled={isCheckingOut || isLoadingSub}
-                              className="w-full py-2 bg-slate-950 hover:bg-slate-900 active:scale-[0.98] text-slate-300 text-[10px] border border-slate-900 rounded-lg font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
-                            >
-                              {isCheckingOut ? (
-                                <RefreshCw className="h-3 w-3 animate-spin text-slate-400" />
-                              ) : (
-                                <ArrowUpRight className="h-3 w-3 text-emerald-400" />
-                              )}
-                              <span>Gerenciar Assinatura (Portal Stripe)</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Fallback offline/keys missing */}
-                        {!fbUser && hasActiveSubscription === null && !isLoadingSub && (
-                          <p className="text-[9px] text-slate-500 text-center leading-normal font-sans py-1">
-                            Acesse com sua conta na seção do <strong className="text-slate-400">Firebase</strong> acima para consultar planos de upgrade do Stripe.
-                          </p>
-                        )}
-                      </div>
-                    </div>
 
                     {/* CARD: CONFIGURAÇÕES GLOBAIS DE SEGURANÇA */}
                     <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left" id="global-security-settings-section">
@@ -3135,47 +3189,62 @@ export default function App() {
                     </div>
 
                     {/* CARD: CRIPTOGRAFIA E DETALHES TECNICOS */}
-                    <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left" id="crypto-spec-section">
-                      <div className="flex items-center justify-between">
+                    <div className="p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left" id="crypto-spec-section">
+                      <button 
+                        onClick={() => setCryptoCollapsed(!cryptoCollapsed)}
+                        type="button"
+                        className="w-full flex items-center justify-between text-left focus:outline-none cursor-pointer"
+                      >
                         <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center space-x-1.5 font-sans">
                           <Shield className="h-3.5 w-3.5 text-emerald-400" />
                           <span>AES-GCM-256 E2E Ativa</span>
                         </div>
-                        <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-500/20 font-semibold font-mono">
-                          MILITAR
-                        </span>
-                      </div>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-500/20 font-semibold font-mono">
+                            MILITAR
+                          </span>
+                          {cryptoCollapsed ? (
+                            <ChevronDown className="h-4 w-4 text-slate-500 hover:text-slate-300 transition-colors" />
+                          ) : (
+                            <ChevronUp className="h-4 w-4 text-emerald-400 hover:text-emerald-300 transition-colors" />
+                          )}
+                        </div>
+                      </button>
                       
-                      <div className="space-y-1.5">
-                        <h3 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h3>
-                        <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                          Armazene registros de perguntas e respostas com segurança inviolável de ponta-a-ponta. Seus dados são salvos localmente e codificados com cifra militar direto no navegador do computador ou do smartphone.
-                        </p>
-                      </div>
+                      {!cryptoCollapsed && (
+                        <div className="space-y-3 pt-3 animate-fade-in border-t border-slate-950 mt-3">
+                          <div className="space-y-1.5">
+                            <h3 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h3>
+                            <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                              Armazene registros de perguntas e respostas com segurança inviolável de ponta-a-ponta. Seus dados são salvos localmente e codificados com cifra militar direto no navegador do computador ou do smartphone.
+                            </p>
+                          </div>
 
-                      <div className="pt-2.5 border-t border-slate-900/80 space-y-2">
-                        <div className="text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider">Especificações da Criptografia</div>
-                        
-                        <div className="space-y-2 text-[10px] text-slate-400 leading-relaxed">
-                          <div className="flex items-start space-x-1.5">
-                            <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
-                            <span><strong className="text-slate-300 font-bold">Zero Knowledge local:</strong> Nenhum servidor externo possui acesso às suas chaves ou textos salvos.</span>
+                          <div className="pt-2.5 border-t border-slate-900/80 space-y-2">
+                            <div className="text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider">Especificações da Criptografia</div>
+                            
+                            <div className="space-y-2 text-[10px] text-slate-400 leading-relaxed">
+                              <div className="flex items-start space-x-1.5">
+                                <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
+                                <span><strong className="text-slate-300 font-bold">Zero Knowledge local:</strong> Nenhum servidor externo possui acesso às suas chaves ou textos salvos.</span>
+                              </div>
+                              <div className="flex items-start space-x-1.5">
+                                <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
+                                <span><strong className="text-slate-300 font-bold">Busca Rápida Instantânea:</strong> Suporta consulta instantânea offline conforme digita o termo.</span>
+                              </div>
+                              <div className="flex items-start space-x-1.5">
+                                <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
+                                <span><strong className="text-slate-300 font-bold">Modo Duplo Blindado:</strong> Marque itens sensíveis para exigir nova confirmação da senha mestra.</span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex items-start space-x-1.5">
-                            <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
-                            <span><strong className="text-slate-300 font-bold">Busca Rápida Instantânea:</strong> Suporta consulta instantânea offline conforme digita o termo.</span>
-                          </div>
-                          <div className="flex items-start space-x-1.5">
-                            <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
-                            <span><strong className="text-slate-300 font-bold">Modo Duplo Blindado:</strong> Marque itens sensíveis para exigir nova confirmação da senha mestra.</span>
+
+                          <div className="pt-2 px-0.5 border-t border-slate-900/80 flex items-center justify-between font-mono text-[9px] text-slate-500 uppercase tracking-wider font-bold">
+                            <span>SERVIDOR INTEGRADO</span>
+                            <span className="text-emerald-400 font-bold">PORTA 3000</span>
                           </div>
                         </div>
-                      </div>
-
-                      <div className="pt-2 px-0.5 border-t border-slate-900/80 flex items-center justify-between font-mono text-[9px] text-slate-500 uppercase tracking-wider font-bold">
-                        <span>SERVIDOR INTEGRADO</span>
-                        <span className="text-emerald-400 font-bold">PORTA 3000</span>
-                      </div>
+                      )}
                     </div>
 
                     {/* DANGER ZONE */}
