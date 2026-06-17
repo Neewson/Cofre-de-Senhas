@@ -34,7 +34,9 @@ import {
   AlertTriangle,
   Cloud,
   CloudOff,
-  Settings
+  Settings,
+  User,
+  ArrowLeft
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -141,7 +143,7 @@ export default function App() {
   const [setupError, setSetupError] = useState<string>('');
 
   // Main UI Tab state
-  const [activeTab, setActiveTab] = useState<'search' | 'add' | 'records'>('search');
+  const [activeTab, setActiveTab] = useState<'search' | 'add' | 'records' | 'profile'>('search');
 
   // Vault data (Decrypted in Memory)
   const [decryptedRecords, setDecryptedRecords] = useState<DecryptedRecord[]>([]);
@@ -779,6 +781,27 @@ export default function App() {
   };
 
   /**
+   * Reset the current configure/setup state to first setup screen.
+   * This is extremely useful if they forgot the password of an imported/restored vault.
+   */
+  const handleBackToSetup = () => {
+    triggerConfirm(
+      'Voltar para Criação / Reiniciar',
+      'Se você voltar, qualquer cofre importado ou dados locais não descriptografados serão desconectados do aparelho para que você possa reiniciar do zero. Tem certeza que deseja voltar?',
+      () => {
+        localStorage.removeItem('secure_config');
+        localStorage.removeItem('secure_records');
+        setIsSetup(false);
+        setEnteredPassword('');
+        setImportStatus(null);
+        setErrorMsg('');
+      },
+      true,
+      'Voltar do Zero'
+    );
+  };
+
+  /**
    * Export encrypted database backup file
    */
   const handleExportBackup = () => {
@@ -1394,14 +1417,14 @@ export default function App() {
                   </div>
 
                   <div className="flex items-center space-x-3 text-left" id="header-right-side">
-                    {activeTab !== 'records' && (
+                    {activeTab !== 'records' && activeTab !== 'profile' && (
                       <div className="flex flex-col items-start justify-center h-9 gap-0.5 pr-1">
                         <h2 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h2>
                         <span className="text-[9px] text-emerald-400 tracking-wider font-mono leading-none">ENCRYPTED VAULT LIVE</span>
                       </div>
                     )}
 
-                    {activeTab === 'records' && (
+                    {(activeTab === 'records' || activeTab === 'profile') && (
                       <div className="flex items-center space-x-2" id="header-actions">
                         <button 
                           onClick={() => setShowSettings(true)}
@@ -1630,6 +1653,20 @@ export default function App() {
                         <span>Desbloquear Cofre</span>
                       </button>
                     </form>
+
+                    {/* Voltar para a Criação/Inicialização se esquecer a senha do cofre importado */}
+                    <div className="pt-4 border-t border-slate-900/60 text-center space-y-2 animate-fade-in">
+                      <p className="text-[10px] text-slate-500 font-medium">Esqueceu a senha mestra ou quer começar de novo?</p>
+                      <button 
+                        type="button"
+                        onClick={handleBackToSetup}
+                        className="px-4 py-2 bg-[#090b11] hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-300 rounded-xl cursor-pointer transition inline-flex items-center space-x-1.5"
+                        id="btn-back-to-setup"
+                      >
+                        <ArrowLeft className="h-3 w-3 text-emerald-400" />
+                        <span>Voltar / Reiniciar Configuração</span>
+                      </button>
+                    </div>
                   </motion.div>
                 )}
 
@@ -2177,6 +2214,301 @@ export default function App() {
                         </div>
                       )}
 
+                      {/* TAB 4: PERFIL, AUTENTICAÇÃO & ASSINATURA STRIPE */}
+                      {activeTab === 'profile' && (
+                        <div className="space-y-4 text-left animate-fade-in" id="tab-profile">
+                          <div className="flex justify-between items-center bg-[#090b11]/40 p-3 rounded-xl border border-slate-900/40">
+                            <div>
+                              <h3 className="text-xs font-sans font-bold tracking-wider text-emerald-400 uppercase">Perfil & Conta</h3>
+                              <p className="text-[9px] text-slate-400 font-semibold leading-tight">Configuração de sincronização e assinatura</p>
+                            </div>
+                            <span className="text-[8px] px-2 py-0.5 bg-[#090b11] border border-slate-800/80 text-emerald-400 rounded-full font-mono font-bold">
+                              {fbUser ? 'CONECTADO' : 'MANUAL'}
+                            </span>
+                          </div>
+
+                          {/* Se NÃO estiver logado no Firebase */}
+                          {!fbUser ? (
+                            <div className="space-y-4 bg-[#090b11]/80 border border-slate-900 p-4 rounded-2xl animate-fade-in">
+                              <div className="text-center space-y-1">
+                                <div className="h-10 w-10 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto shadow-md">
+                                  <User className="h-5 w-5 animate-pulse" />
+                                </div>
+                                <h4 className="text-xs font-bold text-white mt-2 font-display">Conecte sua Conta</h4>
+                                <p className="text-[10px] text-slate-400 max-w-[280px] mx-auto leading-normal">
+                                  Faça login ou crie uma conta para sincronizar e salvar seu cofre de forma segura na nuvem do Firebase e obter pacotes Premium.
+                                </p>
+                              </div>
+
+                              {/* Form Tabs */}
+                              <div className="grid grid-cols-2 gap-1 bg-[#05070a] p-1 rounded-lg border border-slate-900">
+                                <button
+                                  type="button"
+                                  onClick={() => setFbMode('login')}
+                                  className={`py-1.5 text-[10px] font-bold uppercase rounded-md tracking-wider transition cursor-pointer ${fbMode === 'login' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10' : 'text-slate-500 hover:text-slate-400'}`}
+                                >
+                                  Login
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setFbMode('register')}
+                                  className={`py-1.5 text-[10px] font-bold uppercase rounded-md tracking-wider transition cursor-pointer ${fbMode === 'register' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10' : 'text-slate-500 hover:text-slate-400'}`}
+                                >
+                                  Criar Conta
+                                </button>
+                              </div>
+
+                              <form onSubmit={fbMode === 'login' ? handleFbLogin : handleFbRegister} className="space-y-3.5">
+                                <div className="space-y-2.5">
+                                  <div>
+                                    <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                      E-mail
+                                    </label>
+                                    <input
+                                      type="email"
+                                      required
+                                      value={fbEmail}
+                                      onChange={(e) => setFbEmail(e.target.value)}
+                                      placeholder="Ex: seuemail@dominio.com"
+                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-200 text-[11px] p-2.5 rounded-lg focus:outline-none focus:border-emerald-500/40 font-sans"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <div className="flex justify-between items-center mb-1 font-sans">
+                                      <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400">
+                                        Senha do Firebase Sync
+                                      </label>
+                                      <span className="text-slate-500 text-[8px] lowercase">(mínimo 6 dígitos)</span>
+                                    </div>
+                                    <input
+                                      type="password"
+                                      required
+                                      value={fbPassword}
+                                      onChange={(e) => setFbPassword(e.target.value)}
+                                      placeholder="Ao menos 6 caracteres"
+                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-200 text-[11px] p-2.5 rounded-lg focus:outline-none focus:border-emerald-500/40"
+                                    />
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="submit"
+                                  disabled={fbIsLoading}
+                                  className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
+                                >
+                                  {fbIsLoading ? (
+                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Cloud className="h-3.5 w-3.5" />
+                                  )}
+                                  <span>{fbMode === 'login' ? 'Entrar & Sincronizar' : 'Criar Conta & Sincronizar'}</span>
+                                </button>
+                              </form>
+
+                              <div className="relative my-2.5">
+                                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                                  <div className="w-full border-t border-slate-900"></div>
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase font-mono">
+                                  <span className="bg-[#0b0e14] px-1.5 text-slate-500 font-semibold text-[8px]">ou use</span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={handleGoogleSignIn}
+                                disabled={fbIsLoading}
+                                className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+                              >
+                                <svg className="h-3.5 w-3.5 text-slate-300" viewBox="0 0 24 24">
+                                  <path
+                                    fill="currentColor"
+                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
+                                  />
+                                </svg>
+                                <span>Entrar com o Google</span>
+                              </button>
+                            </div>
+                          ) : (
+                            // Se ESTIVER logado no Firebase Auth
+                            <div className="space-y-4 animate-fade-in pb-12">
+                              
+                              {/* Avatar Profile Card */}
+                              <div className="bg-[#090b11]/80 border border-slate-900 p-4 rounded-2xl flex items-center space-x-3.5">
+                                <div className="h-11 w-11 bg-gradient-to-tr from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-slate-950 text-xs font-black border-2 border-emerald-400/20 shadow-lg select-all">
+                                  {fbUser.email ? fbUser.email.slice(0, 2).toUpperCase() : 'US'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider font-mono">Conta Autenticada</div>
+                                  <div className="text-xs font-bold text-white truncate font-sans">{fbUser.email}</div>
+                                  <div className="text-[8px] text-slate-500 font-mono mt-0.5 select-all">ID: {fbUser.uid.slice(0, 12)}...</div>
+                                </div>
+                                
+                                <button
+                                  onClick={handleFbLogout}
+                                  className="text-[8.5px] px-2 py-1.5 bg-red-950/20 hover:bg-red-900/10 text-red-400 hover:text-red-300 border border-red-500/25 rounded-lg font-bold font-mono tracking-wider transition uppercase cursor-pointer"
+                                >
+                                  Sair
+                                </button>
+                              </div>
+
+                              {/* Firestore Sincronização Panel */}
+                              <div className="bg-[#090b11]/80 border border-slate-900 p-3.5 rounded-2xl space-y-2.5">
+                                <div className="flex items-center space-x-1.5 uppercase font-bold text-slate-400 text-[10px] tracking-wider font-sans border-b border-slate-950 pb-2">
+                                  <Cloud className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                                  <span>Sincronismo Cloud (Firebase Docs)</span>
+                                </div>
+
+                                <p className="text-[10px] text-slate-400 leading-normal">
+                                  Suas credenciais são encriptadas de ponta-a-ponta (E2E) com base na sua Senha Mestra antes do envio para o banco de dados.
+                                </p>
+
+                                {fbLastSync && (
+                                  <div className="text-[9px] text-slate-500 font-mono">
+                                    Último Envio/Baixa: <strong className="text-slate-400">{fbLastSync}</strong>
+                                  </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                  <button
+                                    onClick={handleFbBackup}
+                                    disabled={fbIsLoading}
+                                    className="py-2 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                  >
+                                    <RefreshCw className={`h-3 w-3 ${fbIsLoading ? 'animate-spin' : ''}`} />
+                                    <span>Salvar Nuvem</span>
+                                  </button>
+                                  <button
+                                    onClick={handleFbRestore}
+                                    disabled={fbIsLoading}
+                                    className="py-2 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                  >
+                                    <Download className="h-3 w-3" />
+                                    <span>Baixar Nuvem</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Stripe Billing Panel */}
+                              <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left animate-fade-in shadow-md">
+                                <div className="flex items-center justify-between border-b border-slate-950 pb-2">
+                                  <div className="flex items-center space-x-1.5 uppercase font-bold text-slate-400 text-[10px] tracking-wider font-sans">
+                                    <CreditCard className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                                    <span>Assinatura & Faturamento (Stripe)</span>
+                                  </div>
+                                  {hasActiveSubscription !== null && (
+                                    <span className={`text-[8.5px] font-mono font-bold px-2 py-0.5 rounded-full uppercase ${
+                                      hasActiveSubscription 
+                                        ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-900/35 animate-pulse' 
+                                        : 'text-slate-500 bg-slate-950/40 border border-slate-900/60'
+                                    }`}>
+                                      {hasActiveSubscription ? 'Premium' : 'Gratuito'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="space-y-3 pt-1">
+                                  {/* If status is loading or hasn't checked it yet */}
+                                  {hasActiveSubscription === null && isLoadingSub && (
+                                    <div className="text-[10px] text-slate-400 font-mono flex items-center space-x-2 py-1">
+                                      <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                                      <span>Consultando status no Stripe...</span>
+                                    </div>
+                                  )}
+
+                                  {/* Free Tier Upgrade Card */}
+                                  {hasActiveSubscription === false && (
+                                    <div className="space-y-3 animate-fade-in">
+                                      <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                                        Seu Plano: <strong className="text-white">Gratuito (Somente local)</strong>. 
+                                        Faça o upgrade para habilitar backup e sincronização em múltiplos aparelhos pela nuvem criptografada do Firebase.
+                                      </p>
+                                      
+                                      <div className="bg-[#05070a] border border-slate-900 p-2.5 rounded-lg space-y-1.5 font-sans">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-[10px] font-bold text-emerald-400">Plano Premium Cloud Sync</span>
+                                          <span className="text-xs font-mono font-extrabold text-white font-mono">R$ 19,90 <span className="text-[9px] text-slate-500">/mês</span></span>
+                                        </div>
+                                        <p className="text-[9px] text-slate-500 leading-tight">
+                                          Assinatura mensal recorrente processada pelo Stripe de forma 100% segura. Cancele quando quiser.
+                                        </p>
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={handleUpgradeToPremium}
+                                        disabled={isCheckingOut || isLoadingSub}
+                                        className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                                      >
+                                        {isCheckingOut ? (
+                                          <>
+                                            <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-950" />
+                                            <span>Carregando Stripe...</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <CreditCard className="h-3.5 w-3.5" />
+                                            <span>Assinar Premium Agora</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  )}
+
+                                  {/* Active Premium Tier UI */}
+                                  {hasActiveSubscription === true && (
+                                    <div className="space-y-3 animate-fade-in">
+                                      <div className="bg-emerald-950/25 border border-emerald-900/30 p-3 rounded-lg space-y-2">
+                                        <div className="flex items-center space-x-1.5 text-xs text-emerald-400 font-bold leading-none font-sans">
+                                          <Check className="h-4 w-4 text-emerald-400" />
+                                          <span>Premium Ativo no Stripe</span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 leading-normal">
+                                          Obrigado por apoiar nosso software! Todos os recursos de backup e restauração na nuvem estão totalmente ativos.
+                                        </p>
+                                        
+                                        {subscriptionInfo?.nextPayment && (
+                                          <div className="text-[9px] text-slate-500 font-mono border-t border-slate-950 pt-1">
+                                            Próximo faturamento: <strong className="text-slate-400">{subscriptionInfo.nextPayment}</strong>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      <button
+                                        type="button"
+                                        onClick={handleOpenBillingPortal}
+                                        disabled={isCheckingOut || isLoadingSub}
+                                        className="w-full py-2 bg-slate-950 hover:bg-slate-900 active:scale-[0.98] text-slate-300 text-[10px] border border-slate-900 rounded-lg font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                                      >
+                                        {isCheckingOut ? (
+                                          <RefreshCw className="h-3 w-3 animate-spin text-slate-400" />
+                                        ) : (
+                                          <ArrowUpRight className="h-3 w-3 text-emerald-400" />
+                                        )}
+                                        <span>Gerenciar Assinatura (Portal Stripe)</span>
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                     </div>
 
 
@@ -2232,6 +2564,18 @@ export default function App() {
                   >
                     <Database className="h-4.5 w-4.5 text-inherit" />
                     <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Cofre</span>
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      if(isUnlocked) {
+                        setActiveTab('profile');
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'profile' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                  >
+                    <User className="h-4.5 w-4.5 text-inherit" />
+                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Perfil</span>
                   </button>
                 </div>
 
