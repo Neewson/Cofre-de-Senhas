@@ -99,6 +99,7 @@ export default function App() {
   );
   const [showGDriveClientSetup, setShowGDriveClientSetup] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+  const [showSetupWarning, setShowSetupWarning] = useState<boolean>(false);
 
   // Custom dialogs (to bypass iframe-blocked native alert/confirm APIs)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -764,56 +765,11 @@ export default function App() {
       {/* Cyberpunk abstract tech grid overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b0b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b0b_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none -z-10" />
 
-      {/* Responsive layout: Desktop container on large screen, converts to mobile-only style smoothly */}
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center justify-center z-10" id="layout-grid">
+      {/* Centered layout for Smartphone Simulator Chassis */}
+      <div className="w-full max-w-[420px] flex justify-center z-10" id="layout-grid">
         
-        {/* Left Side: Desktop Branding & Status Bar (Visible on desktops) */}
-        <div className="lg:col-span-12 lg:lg:col-span-5 space-y-6 hidden lg:block text-left relative p-6 rounded-3xl bg-slate-900/40 backdrop-blur-md border border-slate-850/80 shadow-[inset_0_1px_1px_rgba(255,255,255,0.03)]" id="desktop-side-banner">
-          <div className="inline-flex items-center space-x-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-[0_0_15px_rgba(16,185,129,0.08)]" id="pill-badge">
-            <Shield className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-            <span className="font-mono tracking-wider uppercase text-[10px]">AES-GCM-256 E2E Ativa</span>
-          </div>
-          
-          <h1 className="text-4xl font-display font-extrabold tracking-tight text-white leading-tight">
-            Cofre <span className="relative inline-block"><span className="absolute -inset-1 rounded-lg bg-emerald-500/10 blur-sm"></span><span className="relative text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-300">de Senhas</span></span>
-          </h1>
-          
-          <p className="text-xs text-slate-400 leading-relaxed font-sans">
-            Armazene registros de perguntas e respostas com segurança inviolável de ponta-a-ponta. Seus dados são salvos localmente e codificados com cifra militar direto no navegador do computador ou do smartphone.
-          </p>
-
-          <div className="p-4.5 bg-slate-950/60 border border-slate-900 rounded-2xl space-y-3.5 shadow-inner" id="tech-highlights">
-            <h3 className="text-[10px] font-bold font-mono text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-900 pb-2">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Especificações da Criptografia</span>
-            </h3>
-            <ul className="space-y-2.5 text-xs text-slate-400">
-              <li className="flex items-start space-x-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                <span><b className="text-slate-200">Zero Knowledge local:</b> Nenhum servidor externo possui acesso às suas chaves ou textos salvos.</span>
-              </li>
-              <li className="flex items-start space-x-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                <span><b className="text-slate-200">Busca Rápida Instantânea:</b> Suporta consulta instantânea offline conforme digita o termo.</span>
-              </li>
-              <li className="flex items-start space-x-2.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-                <span><b className="text-slate-200">Modo Duplo Blindado:</b> Marque itens sensíveis para exigir nova confirmação da senha mestra.</span>
-              </li>
-            </ul>
-          </div>
-
-          <div className="text-[10px] text-slate-500 flex items-center space-x-2 font-mono">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <span>SERVIDOR INTEGRADO • PORTA 3000</span>
-          </div>
-        </div>
-
-        {/* Right Side / Middle Container: Smartphone Simulator Chassis */}
-        <div className="lg:col-span-7 flex justify-center w-full" id="phone-container-wrapper">
+        {/* Smartphone Simulator Chassis */}
+        <div className="flex justify-center w-full" id="phone-container-wrapper">
           
           {/* Smart Mobile Phone Frame - On mobile it stretches cleanly */}
           <div className="w-full max-w-[420px] bg-[#0c0e14] border-0 sm:border-[12px] border-[#181d28] rounded-[42px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),0_0_40px_rgba(16,185,129,0.03)] relative overflow-hidden flex flex-col justify-between h-[820px] max-h-screen text-slate-100" id="smartphone-frame">
@@ -940,11 +896,30 @@ export default function App() {
                         </div>
                       )}
 
-                      <div className="p-3.5 bg-amber-500/5 border border-amber-500/15 text-amber-300 text-[10px] text-left rounded-xl space-y-1.5 leading-relaxed">
-                        <span className="font-bold flex items-center text-xs tracking-wider text-amber-400 uppercase font-mono">
-                          <AlertTriangle className="h-3.5 w-3.5 mr-1 text-amber-400 shrink-0" /> ATENÇÃO
-                        </span>
-                        Se você perder esta senha mestra, as perguntas e respostas armazenadas no cofre estarão encriptadas para sempre e não poderão ser recuperadas.
+                      <div className="flex flex-col space-y-2">
+                        <div className="flex justify-center">
+                          <button
+                            type="button"
+                            onClick={() => setShowSetupWarning(!showSetupWarning)}
+                            className="flex items-center justify-center p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 hover:border-amber-500/40 text-amber-400 cursor-pointer transition-all duration-200"
+                            title="Clique para ver aviso de segurança importante"
+                          >
+                            <AlertTriangle className="h-5 w-5 shrink-0" />
+                          </button>
+                        </div>
+
+                        {showSetupWarning && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="p-3.5 bg-amber-500/5 border border-amber-500/15 text-amber-300 text-[10px] text-left rounded-xl space-y-1.5 leading-relaxed"
+                          >
+                            <span className="font-bold flex items-center text-xs tracking-wider text-amber-400 uppercase font-mono">
+                              <AlertTriangle className="h-3.5 w-3.5 mr-1 text-amber-400 shrink-0" /> ATENÇÃO
+                            </span>
+                            Se você perder esta senha mestra, as perguntas e respostas armazenadas no cofre estarão encriptadas para sempre e não poderão ser recuperadas.
+                          </motion.div>
+                        )}
                       </div>
 
                       <button
@@ -1685,26 +1660,16 @@ export default function App() {
                     
                     {/* CARD 1: JSON BACKUP MANAGEMENT */}
                     <div className="space-y-2" id="json-backup-section">
-                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Backup e Importação Local</div>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Backup Local</div>
+                      <div>
                         {/* EXPORT BUTTON */}
                         <button
                           onClick={handleExportBackup}
-                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
+                          className="w-full py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
                           id="settings-export-btn"
                         >
                           <Download className="h-3.5 w-3.5 text-emerald-400" />
                           <span>Exportar JSON</span>
-                        </button>
-
-                        {/* IMPORT BUTTON */}
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
-                          id="settings-import-btn"
-                        >
-                          <Upload className="h-3.5 w-3.5 text-blue-400" />
-                          <span>Importar JSON</span>
                         </button>
                       </div>
                     </div>
@@ -1828,6 +1793,50 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                    </div>
+ 
+                    {/* CARD: CRIPTOGRAFIA E DETALHES TECNICOS */}
+                    <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left" id="crypto-spec-section">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center space-x-1.5 font-sans">
+                          <Shield className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>AES-GCM-256 E2E Ativa</span>
+                        </div>
+                        <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-500/20 font-semibold font-mono">
+                          MILITAR
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <h3 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h3>
+                        <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                          Armazene registros de perguntas e respostas com segurança inviolável de ponta-a-ponta. Seus dados são salvos localmente e codificados com cifra militar direto no navegador do computador ou do smartphone.
+                        </p>
+                      </div>
+
+                      <div className="pt-2.5 border-t border-slate-900/80 space-y-2">
+                        <div className="text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider">Especificações da Criptografia</div>
+                        
+                        <div className="space-y-2 text-[10px] text-slate-400 leading-relaxed">
+                          <div className="flex items-start space-x-1.5">
+                            <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
+                            <span><strong className="text-slate-300 font-bold">Zero Knowledge local:</strong> Nenhum servidor externo possui acesso às suas chaves ou textos salvos.</span>
+                          </div>
+                          <div className="flex items-start space-x-1.5">
+                            <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
+                            <span><strong className="text-slate-300 font-bold">Busca Rápida Instantânea:</strong> Suporta consulta instantânea offline conforme digita o termo.</span>
+                          </div>
+                          <div className="flex items-start space-x-1.5">
+                            <span className="text-emerald-400 font-bold font-mono text-xs mt-[-2px]">•</span>
+                            <span><strong className="text-slate-300 font-bold">Modo Duplo Blindado:</strong> Marque itens sensíveis para exigir nova confirmação da senha mestra.</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 px-0.5 border-t border-slate-900/80 flex items-center justify-between font-mono text-[9px] text-slate-500 uppercase tracking-wider font-bold">
+                        <span>SERVIDOR INTEGRADO</span>
+                        <span className="text-emerald-400 font-bold">PORTA 3000</span>
+                      </div>
                     </div>
 
                     {/* DANGER ZONE */}
