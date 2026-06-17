@@ -1386,22 +1386,21 @@ export default function App() {
       {/* Cyberpunk abstract tech grid overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b0b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b0b_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none -z-10" />
 
-      {/* Centered layout for Smartphone Simulator Chassis */}
-      <div className="w-full max-w-[420px] flex justify-center z-10" id="layout-grid">
+      {/* Centered layout for Modern Responsive Web Workspace */}
+      <div className="w-full max-w-5xl flex justify-center z-10 px-2 sm:px-6 py-4 md:py-8" id="layout-grid">
         
-        {/* Smartphone Simulator Chassis */}
+        {/* Main Cybersecurity Web Workspace Console */}
         <div className="flex justify-center w-full" id="phone-container-wrapper">
           
-          {/* Smart Mobile Phone Frame - On mobile it stretches cleanly */}
-          <div className="w-full max-w-[420px] bg-[#0c0e14] border-0 sm:border-[12px] border-[#181d28] rounded-[42px] shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),0_0_40px_rgba(16,185,129,0.03)] relative overflow-hidden flex flex-col justify-between h-[820px] max-h-screen text-slate-100" id="smartphone-frame">
+          {/* Secure Web Workspace Frame - Expanded widescreen layout */}
+          <div className="w-full max-w-5xl bg-[#0c0e14] border border-slate-900 rounded-3xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),0_0_50px_rgba(16,185,129,0.04)] relative overflow-hidden flex flex-col justify-between min-h-[640px] md:min-h-[760px] text-slate-100" id="smartphone-frame">
             
-            {/* Top Ear Speaker & Punch hole Camera notch details */}
-            <div className="absolute top-0 inset-x-0 h-6 bg-[#06070a] z-40" id="phone-status-bar" />
+            {/* Top Cyan Glowing High-Tech Loading Accent Bar */}
+            <div className="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-emerald-500/30 via-teal-500/80 to-emerald-500/30 z-40" id="phone-status-bar" />
 
             {/* Main Inside Viewport wrapper */}
             <div 
-              className="flex-grow pt-8 overflow-y-auto px-4.5 bg-[#080a0f] scrollbar-none flex flex-col justify-start" 
-              style={{ paddingBottom: 'calc(120px + env(safe-area-inset-bottom, 16px))' }}
+              className="flex-grow pt-6 overflow-y-auto px-4 sm:px-8 bg-[#080a0f] scrollbar-none flex flex-col justify-start pb-28" 
               id="app-viewport"
             >
               
@@ -2679,27 +2678,23 @@ export default function App() {
               </AnimatePresence>
             </div>
             
-            {/* Fake Android screen navigation bar details */}
+            {/* Elegant Modern Web Console Navigation Bar */}
             {isUnlocked && (
               <div 
-                className="absolute bottom-0 inset-x-0 bg-slate-950/98 flex flex-col justify-between border-t border-slate-900/40 select-none text-slate-500 pt-3.5 pb-2 shadow-[0_-8px_30px_rgba(0,0,0,0.6)] z-40 transition-all duration-300"
-                style={{
-                  height: 'calc(110px + env(safe-area-inset-bottom, 16px))',
-                  paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 16px))'
-                }}
+                className="absolute bottom-0 inset-x-0 bg-[#090c13]/98 flex flex-col justify-between border-t border-slate-900/80 select-none text-slate-500 py-3.5 shadow-[0_-8px_30px_rgba(0,0,0,0.7)] z-40 transition-all duration-300"
                 id="android-nav-bar"
               >
-                <div className="flex items-center justify-around w-full" id="nav-buttons-container">
+                <div className="flex items-center justify-around w-full max-w-2xl mx-auto px-4" id="nav-buttons-container">
                   <button 
                     onClick={() => {
                       if(isUnlocked) {
                         setActiveTab('search');
                       }
                     }}
-                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'search' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 cursor-pointer ${activeTab === 'search' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
                   >
                     <Search className="h-4.5 w-4.5 text-inherit" />
-                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Buscar</span>
+                    <span className="text-[9.5px] font-mono tracking-widest uppercase mt-1">Buscar</span>
                   </button>
                   
                   <button 
@@ -2708,10 +2703,10 @@ export default function App() {
                         setActiveTab('add');
                       }
                     }}
-                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'add' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 cursor-pointer ${activeTab === 'add' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
                   >
                     <Plus className="h-4.5 w-4.5 text-inherit" />
-                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Adicionar</span>
+                    <span className="text-[9.5px] font-mono tracking-widest uppercase mt-1">Adicionar</span>
                   </button>
 
                   <button 
@@ -2720,10 +2715,10 @@ export default function App() {
                         setActiveTab('records');
                       }
                     }}
-                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'records' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 cursor-pointer ${activeTab === 'records' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
                   >
                     <Database className="h-4.5 w-4.5 text-inherit" />
-                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Cofre</span>
+                    <span className="text-[9.5px] font-mono tracking-widest uppercase mt-1">Cofre</span>
                   </button>
 
                   <button 
@@ -2732,16 +2727,16 @@ export default function App() {
                         setActiveTab('profile');
                       }
                     }}
-                    className={`flex flex-col items-center justify-center transition-all duration-200 ${activeTab === 'profile' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
+                    className={`flex flex-col items-center justify-center transition-all duration-200 cursor-pointer ${activeTab === 'profile' && isUnlocked ? 'text-emerald-400 font-extrabold scale-105' : 'text-slate-500 hover:text-slate-300'}`}
                   >
                     <User className="h-4.5 w-4.5 text-inherit" />
-                    <span className="text-[9px] font-mono tracking-widest uppercase mt-1">Perfil</span>
+                    <span className="text-[9.5px] font-mono tracking-widest uppercase mt-1">Perfil</span>
                   </button>
                 </div>
 
-                <div className="w-full text-center pt-2 border-t border-slate-900/40" id="nav-footer-text">
-                  <span className="text-[8px] text-slate-500 font-medium font-mono uppercase tracking-wider block">
-                    Sua privacidade é inegociável • Dados E2E 256 bits
+                <div className="w-full text-center pt-2.5 border-t border-slate-900/60 mt-2" id="nav-footer-text">
+                  <span className="text-[8.5px] text-slate-500 font-semibold font-mono uppercase tracking-wider block">
+                    Sua privacidade é inegociável • Dados E2E 256 bits • Criptografia em cliente Zero-Knowledge
                   </span>
                 </div>
               </div>
@@ -2755,7 +2750,7 @@ export default function App() {
                   animate={{ y: 0 }}
                   exit={{ y: '100%' }}
                   transition={{ type: 'spring', damping: 28, stiffness: 240 }}
-                  className="absolute inset-0 bg-[#080a0f] z-50 flex flex-col pt-8 pb-4"
+                  className="absolute inset-0 bg-[#080a0f] z-50 flex flex-col pt-4 pb-4 px-2 sm:px-4 rounded-3xl"
                   id="settings-overlay-panel"
                 >
                   {/* HEADER */}
