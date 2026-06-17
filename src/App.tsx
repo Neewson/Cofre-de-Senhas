@@ -17,6 +17,8 @@ import {
   Copy, 
   Check, 
   FileText, 
+  CreditCard,
+  ArrowUpRight, 
   RefreshCw, 
   Download, 
   Upload, 
@@ -213,6 +215,17 @@ export default function App() {
   const [genSymbols, setGenSymbols] = useState<boolean>(true);
   const [genResult, setGenResult] = useState<string>('');
 
+  // Stripe Integration States
+  const [hasActiveSubscription, setHasActiveSubscription] = useState<boolean | null>(null);
+  const [subscriptionInfo, setSubscriptionInfo] = useState<{
+    planName: string;
+    nextPayment: string | null;
+    customerId: string | null;
+    stripeStatus: string | null;
+  } | null>(null);
+  const [isLoadingSub, setIsLoadingSub] = useState<boolean>(false);
+  const [isCheckingOut, setIsCheckingOut] = useState<boolean>(false);
+
   // Custom dialogs (to bypass iframe-blocked native alert/confirm APIs)
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -399,6 +412,127 @@ export default function App() {
       generateSecurePassword();
     }
   }, [showGenerator, genLength, genUpper, genLower, genNumbers, genSymbols]);
+
+  /**
+   * Refreshes the user's active billing status via our backend server
+   */
+  const handleCheckSubscriptionStatus = async (userEmail: string, userId: string) => {
+    if (!userEmail) return;
+    setIsLoadingSub(true);
+    try {
+      const response = await fetch('/api/stripe/status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: userEmail, userId }),
+      });
+      const data = await response.json();
+      if (data) {
+        setHasActiveSubscription(data.hasActiveSubscription);
+        setSubscriptionInfo({
+          planName: data.planName || 'Gratuito',
+          nextPayment: data.nextPayment || null,
+          customerId: data.customerId || null,
+          stripeStatus: data.stripeStatus || null,
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao verificar assinatura:', error);
+    } finally {
+      setIsLoadingSub(false);
+    }
+  };
+
+  /**
+   * Directs the user to a secure Stripe Checkout Session for Premium subscription upgrade
+   */
+  const handleUpgradeToPremium = async () => {
+    if (!fbUser) {
+      triggerAlert('Conta Necessária', 'Por favor, conecte-se à sua conta (Firebase Cloud) na aba de Backup em Nuvem primeiro para que sua assinatura do Stripe possa ser registrada.');
+      return;
+    }
+    setIsCheckingOut(true);
+    try {
+      const response = await fetch('/api/stripe/create-checkout-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: fbUser.email,
+          userId: fbUser.uid,
+        }),
+      });
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else if (data.error) {
+        triggerAlert('Erro Stripe', `Ocorreu um erro ao criar a sessão de checkout do Stripe: ${data.error}`);
+      }
+    } catch (err: any) {
+      console.error('Erro no checkout Stripe:', err);
+      triggerAlert('Falha ao conectar', 'Não foi possível conectar ao servidor Stripe para iniciar a transação de checkout.');
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
+  /**
+   * Directs the user to the Stripe Self-Service Billing Customer Portal
+   */
+  const handleOpenBillingPortal = async () => {
+    if (!subscriptionInfo?.customerId) {
+      triggerAlert('Sem dados de cobrança', 'Você ainda não possui um registro de cobrança ativo com dados de pagamento no Stripe.');
+      return;
+    }
+    setIsCheckingOut(true);
+    try {
+      const response = await fetch('/api/stripe/create-portal-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customerId: subscriptionInfo.customerId,
+        }),
+      });
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else if (data.error) {
+        triggerAlert('Erro Stripe Portal', `Erro ao abrir painel de faturamento: ${data.error}`);
+      }
+    } catch (err: any) {
+      console.error('Erro ao abrir portal de cobrança:', err);
+      triggerAlert('Falha de conexão', 'Falha ao sincronizar com o provedor de portal Stripe.');
+    } finally {
+      setIsCheckingOut(false);
+    }
+  };
+
+  // Automatically check Stripe status when fbUser changes
+  useEffect(() => {
+    if (fbUser) {
+      handleCheckSubscriptionStatus(fbUser.email, fbUser.uid);
+    } else {
+      setHasActiveSubscription(null);
+      setSubscriptionInfo(null);
+    }
+  }, [fbUser]);
+
+  // Monitor Stripe Success/Cancel params in the URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const stripeStatus = urlParams.get('stripe_status');
+    if (stripeStatus === 'success') {
+      triggerAlert('Assinatura Confirmada!', 'Parabéns! Sua assinatura Premium Cloud Sync foi confirmada com sucesso via Stripe. Os recursos premium de backup na nuvem estão totalmente liberados!');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (stripeStatus === 'cancel') {
+      triggerAlert('Cancelado', 'A transação do Stripe foi pausada ou cancelada. Você continua com o plano gratuito.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   /**
    * Handles first-time password setup scheme
@@ -972,6 +1106,19 @@ export default function App() {
       return;
     }
 
+    if (!hasActiveSubscription) {
+      triggerConfirm(
+        'Backup na Nuvem (Premium) ⚡',
+        'O backup em nuvem automática e sincronização ilimitada é um recurso exclusivo do plano Premium. Deseja realizar o upgrade por apenas R$ 19,90/mês para habilitar o backup seguro do seu cofre?',
+        async () => {
+          await handleUpgradeToPremium();
+        },
+        false,
+        'Assinar Premium (R$ 19,90)'
+      );
+      return;
+    }
+
     setFbIsLoading(true);
     try {
       const rawData = localStorage.getItem('secure_records') || '[]';
@@ -1005,6 +1152,19 @@ export default function App() {
   const handleFbRestore = async () => {
     if (!fbUser) {
       triggerAlert('Nuvem Desconectada', 'Por favor, conecte a sua conta Firebase antes de restaurar.');
+      return;
+    }
+
+    if (!hasActiveSubscription) {
+      triggerConfirm(
+        'Restauração de Senhas (Premium) ⚡',
+        'A restauração automática de backups em nuvem é um recurso do plano Premium. Deseja obter acesso ilimitado por R$ 19,90/mês para restaurar seus dados criptografados?',
+        async () => {
+          await handleUpgradeToPremium();
+        },
+        false,
+        'Assinar Premium (R$ 19,90)'
+      );
       return;
     }
 
@@ -2431,6 +2591,121 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    {/* CARD: STRIPE BILLING & PREMIUM SUBSCRIPTION */}
+                    <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left animate-fade-in" id="stripe-billing-section">
+                      <div className="flex items-center justify-between border-b border-slate-950 pb-2">
+                        <div className="flex items-center space-x-1.5 uppercase font-bold text-slate-400 text-[10px] tracking-wider font-sans">
+                          <CreditCard className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                          <span>Assinatura & Faturamento (Stripe)</span>
+                        </div>
+                        {hasActiveSubscription !== null && (
+                          <span className={`text-[8.5px] font-mono font-bold px-2 py-0.5 rounded-full uppercase ${
+                            hasActiveSubscription 
+                              ? 'text-emerald-400 bg-emerald-950/40 border border-emerald-900/35 animate-pulse' 
+                              : 'text-slate-500 bg-slate-950/40 border border-slate-900/60'
+                          }`}>
+                            {hasActiveSubscription ? 'Premium' : 'Gratuito'}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-3 pt-1">
+                        {/* If status is loading or hasn't checked it yet */}
+                        {hasActiveSubscription === null && isLoadingSub && (
+                          <div className="text-[10px] text-slate-400 font-mono flex items-center space-x-2 py-1">
+                            <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                            <span>Consultando status no Stripe...</span>
+                          </div>
+                        )}
+
+                        {/* Free Tier Upgrade Card */}
+                        {hasActiveSubscription === false && (
+                          <div className="space-y-3 animate-fade-in">
+                            <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                              Seu Plano: <strong className="text-white">Gratuito (Somente local)</strong>. 
+                              Faça o upgrade para habilitar backup e sincronização em múltiplos aparelhos pela nuvem criptografada do Firebase.
+                            </p>
+                            
+                            <div className="bg-[#05070a] border border-slate-900 p-2.5 rounded-lg space-y-1.5">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-emerald-400">Plano Premium Cloud Sync</span>
+                                <span className="text-xs font-mono font-extrabold text-white">R$ 19,90 <span className="text-[9px] text-slate-500">/mês</span></span>
+                              </div>
+                              <p className="text-[9px] text-slate-500 leading-tight">
+                                Assinatura mensal recorrente processada pelo Stripe de forma 100% segura. Cancele quando quiser.
+                              </p>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleUpgradeToPremium}
+                              disabled={isCheckingOut || isLoadingSub}
+                              className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.98] text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                            >
+                              {isCheckingOut ? (
+                                <>
+                                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-slate-950" />
+                                  <span>Carregando Stripe...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <CreditCard className="h-3.5 w-3.5" />
+                                  <span>Assinar Premium Agora</span>
+                                </>
+                              )}
+                            </button>
+                            {!fbUser && (
+                              <p className="text-[8.5px] text-amber-500 text-center font-bold uppercase tracking-wider font-sans leading-none mt-1 animate-pulse">
+                                ⚠ Conecte sua conta Firebase para liberar assinatura
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Active Premium Tier UI */}
+                        {hasActiveSubscription === true && (
+                          <div className="space-y-3 animate-fade-in">
+                            <div className="bg-emerald-950/25 border border-emerald-900/30 p-3 rounded-lg space-y-2">
+                              <div className="flex items-center space-x-1.5 text-xs text-emerald-400 font-bold leading-none">
+                                <Check className="h-4 w-4 text-emerald-400" />
+                                <span>Premium Ativo no Stripe</span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 leading-normal">
+                                Obrigado por apoiar nosso software! Todos os recursos de backup e restauração na nuvem estão totalmente ativos.
+                              </p>
+                              
+                              {subscriptionInfo?.nextPayment && (
+                                <div className="text-[9px] text-slate-500 font-mono border-t border-slate-950 pt-1">
+                                  Próximo faturamento: <strong className="text-slate-400">{subscriptionInfo.nextPayment}</strong>
+                                </div>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={handleOpenBillingPortal}
+                              disabled={isCheckingOut || isLoadingSub}
+                              className="w-full py-2 bg-slate-950 hover:bg-slate-900 active:scale-[0.98] text-slate-300 text-[10px] border border-slate-900 rounded-lg font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                              {isCheckingOut ? (
+                                <RefreshCw className="h-3 w-3 animate-spin text-slate-400" />
+                              ) : (
+                                <ArrowUpRight className="h-3 w-3 text-emerald-400" />
+                              )}
+                              <span>Gerenciar Assinatura (Portal Stripe)</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Fallback offline/keys missing */}
+                        {!fbUser && hasActiveSubscription === null && !isLoadingSub && (
+                          <p className="text-[9px] text-slate-500 text-center leading-normal font-sans py-1">
+                            Acesse com sua conta na seção do <strong className="text-slate-400">Firebase</strong> acima para consultar planos de upgrade do Stripe.
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     {/* CARD: CONFIGURAÇÕES GLOBAIS DE SEGURANÇA */}
