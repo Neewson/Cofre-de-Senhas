@@ -44,6 +44,88 @@ import {
 } from './lib/crypto';
 import { SecureRecord, DecryptedRecord, SecureConfig } from './types';
 
+// Firebase core, auth and database imports
+import { db, auth } from './lib/firebase';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup
+} from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+// Standardized Firestore error-reporting structure as mandated by security skills
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function calculatePasswordStrength(password: string): { score: number; label: string; color: string; percentage: number } {
+  if (!password) return { score: 0, label: 'Vazio', color: 'bg-slate-800', percentage: 0 };
+  let score = 0;
+  if (password.length >= 6) score += 1;
+  if (password.length >= 10) score += 1;
+  if (/[A-Z]/.test(password)) score += 1;
+  if (/[0-9]/.test(password)) score += 1;
+  if (/[^A-Za-z0-9]/.test(password)) score += 1;
+
+  if (score <= 1) {
+    return { score, label: 'Muito Fraca ⚠️', color: 'bg-red-500', percentage: 20 };
+  } else if (score === 2) {
+    return { score, label: 'Fraca', color: 'bg-orange-500', percentage: 40 };
+  } else if (score === 3) {
+    return { score, label: 'Razoável', color: 'bg-yellow-500', percentage: 60 };
+  } else if (score === 4) {
+    return { score, label: 'Forte 💪', color: 'bg-emerald-500', percentage: 80 };
+  } else {
+    return { score, label: 'Inviolável 🔥', color: 'bg-cyan-400', percentage: 100 };
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export default function App() {
   // Authentication & Configuration states
   const [isSetup, setIsSetup] = useState<boolean>(false);
@@ -95,11 +177,41 @@ export default function App() {
     localStorage.getItem('secure_gdrive_last_sync')
   );
   const [gdriveClientId, setGdriveClientId] = useState<string>(
-    localStorage.getItem('secure_google_client_id') || (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || ''
+    localStorage.getItem('secure_google_client_id') || 
+    (import.meta as any).env?.VITE_GOOGLE_CLIENT_ID || 
+    '629248809839-al3q9ad4e9es6763hom58t4fohsth9r2.apps.googleusercontent.com'
   );
   const [showGDriveClientSetup, setShowGDriveClientSetup] = useState<boolean>(false);
+
+  // Firebase Cloud Backup & Sync states
+  const [fbUser, setFbUser] = useState<any>(null);
+  const [fbEmail, setFbEmail] = useState<string>('');
+  const [fbPassword, setFbPassword] = useState<string>('');
+  const [fbIsLoading, setFbIsLoading] = useState<boolean>(false);
+  const [fbLastSync, setFbLastSync] = useState<string | null>(
+    localStorage.getItem('secure_fb_last_sync')
+  );
+  const [fbMode, setFbMode] = useState<'login' | 'register'>('login');
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showSetupWarning, setShowSetupWarning] = useState<boolean>(false);
+
+  // Advanced Security & Clipboard auto-clear states
+  const [autoLockTimeout, setAutoLockTimeout] = useState<string>(
+    localStorage.getItem('secure_autolock_timeout') || '5'
+  );
+  const [clipboardTimeout, setClipboardTimeout] = useState<string>(
+    localStorage.getItem('secure_clipboard_timeout') || '30'
+  );
+  const [copiedNotification, setCopiedNotification] = useState<{ id: string; secondsLeft: number } | null>(null);
+
+  // Secure Password Generator states
+  const [showGenerator, setShowGenerator] = useState<boolean>(false);
+  const [genLength, setGenLength] = useState<number>(16);
+  const [genUpper, setGenUpper] = useState<boolean>(true);
+  const [genLower, setGenLower] = useState<boolean>(true);
+  const [genNumbers, setGenNumbers] = useState<boolean>(true);
+  const [genSymbols, setGenSymbols] = useState<boolean>(true);
+  const [genResult, setGenResult] = useState<string>('');
 
   // Custom dialogs (to bypass iframe-blocked native alert/confirm APIs)
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -181,6 +293,112 @@ export default function App() {
     setRevealedInCofre({});
     setRevealedSecureRecords({});
   }, [activeTab]);
+
+  // Monitor Firebase Auth state change safely
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setFbUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Auto-Lock Vault on Inactivity
+  useEffect(() => {
+    if (!isUnlocked || autoLockTimeout === '0') return;
+
+    let timeoutId: any;
+    const timeoutMs = parseInt(autoLockTimeout) * 60 * 1000;
+
+    const resetTimer = () => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        handleLockVault();
+        triggerAlert('Bloqueio por Inatividade', 'O cofre foi trancado automaticamente para sua segurança após o período configurado de inatividade.');
+      }, timeoutMs);
+    };
+
+    // User interaction events
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    events.forEach(event => window.addEventListener(event, resetTimer));
+
+    resetTimer();
+
+    return () => {
+      clearTimeout(timeoutId);
+      events.forEach(event => window.removeEventListener(event, resetTimer));
+    };
+  }, [isUnlocked, autoLockTimeout]);
+
+  // Clipboard Countdown and auto-clear handler
+  useEffect(() => {
+    if (!copiedNotification) return;
+
+    const intervalId = setInterval(() => {
+      setCopiedNotification(prev => {
+        if (!prev) return null;
+        if (prev.secondsLeft <= 1) {
+          try {
+            navigator.clipboard.writeText('');
+          } catch (e) {
+            console.warn('Erro ao limpar clipboard:', e);
+          }
+          return null;
+        }
+        return { ...prev, secondsLeft: prev.secondsLeft - 1 };
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [copiedNotification]);
+
+  /**
+   * Secure Clipboard Copy with Auto-Clear Trigger
+   */
+  const handleCopyToClipboard = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      const secondsSetting = parseInt(clipboardTimeout);
+      if (secondsSetting > 0) {
+        setCopiedNotification({ id, secondsLeft: secondsSetting });
+      } else {
+        setCopiedNotification({ id, secondsLeft: 2 }); // Temp 2s indicator
+      }
+    } catch (err) {
+      console.warn('Clipboard write blocked:', err);
+    }
+  };
+
+  /**
+   * Generates a cryptographically strong random password using window.crypto
+   */
+  const generateSecurePassword = () => {
+    let charset = '';
+    if (genUpper) charset += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    if (genLower) charset += 'abcdefghijklmnopqrstuvwxyz';
+    if (genNumbers) charset += '0123456789';
+    if (genSymbols) charset += '!@#$%^&*()_+-=[]{}|;:,.<>?';
+
+    if (!charset) {
+      setGenResult('');
+      return;
+    }
+
+    let password = '';
+    // Use Web Crypto's secure random generation
+    const array = new Uint32Array(genLength);
+    window.crypto.getRandomValues(array);
+    for (let i = 0; i < genLength; i++) {
+      password += charset[array[i] % charset.length];
+    }
+    setGenResult(password);
+  };
+
+  // Re-generate password when options change
+  useEffect(() => {
+    if (showGenerator) {
+      generateSecurePassword();
+    }
+  }, [showGenerator, genLength, genUpper, genLower, genNumbers, genSymbols]);
 
   /**
    * Handles first-time password setup scheme
@@ -534,6 +752,17 @@ export default function App() {
             }
           }
         },
+        error_callback: (err: any) => {
+          console.warn('Core Google Identity Error (handled):', err);
+          let errMsg = err?.message || String(err);
+          const errType = err?.type || err?.error || '';
+          if (errType === 'popup_failed_to_open' || errMsg.includes('popup_failed_to_open')) {
+            errMsg = 'O pop-up de login foi bloqueado pelo seu navegador. Por favor, ative a exibição de pop-ups para este site e tente novamente, ou abra o app em uma aba externa cheia.';
+          } else if (errType === 'popup_closed_by_user' || errMsg.includes('popup_closed_by_user') || errMsg.includes('closed') || errMsg.includes('window closed')) {
+            errMsg = 'Você fechou a janela de login antes de completar a permissão de acesso ao Google Drive.';
+          }
+          triggerAlert('Aviso de Autenticação', errMsg);
+        }
       });
 
       if (client) {
@@ -542,8 +771,13 @@ export default function App() {
         triggerAlert('Biblioteca Não Carregada', 'A biblioteca do Google Identity não foi totalmente carregada no navegador. Tente em alguns instantes.');
       }
     } catch (err: any) {
-      console.error(err);
-      triggerAlert('Erro de Login', 'Não foi possível iniciar a autenticação de segurança do Google.');
+      console.warn('Core Google Identity Error initialized (handled):', err);
+      const isIframe = window.self !== window.top;
+      let errMsg = `Não foi possível iniciar a autenticação de segurança do Google: ${err.message || err}`;
+      if (isIframe) {
+        errMsg += '\n\nNota importante: O navegador bloqueia pop-ups e sessões seguras do Google de terceiros quando usados dentro de frames (como este preview do AI Studio). Para resolver isso e sincronizar:\n\n1. Clique no ícone de link externo (no canto superior direito do preview) para abrir este aplicativo em uma aba dedicada inteira.\n2. Conecte pelo Google Drive lá.';
+      }
+      triggerAlert('Aviso de Segurança', errMsg);
     }
   };
 
@@ -729,6 +963,205 @@ export default function App() {
     );
   };
 
+  /**
+   * Firebase Sync and Backup handler methods
+   */
+  const handleFbBackup = async () => {
+    if (!fbUser) {
+      triggerAlert('Nuvem Desconectada', 'Por favor, conecte a sua conta Firebase antes de fazer backup.');
+      return;
+    }
+
+    setFbIsLoading(true);
+    try {
+      const rawData = localStorage.getItem('secure_records') || '[]';
+      const configData = localStorage.getItem('secure_config') || '{}';
+
+      const transferPayload = {
+        config: JSON.parse(configData),
+        records: JSON.parse(rawData),
+        updatedAt: new Date().toISOString()
+      };
+
+      const docRef = doc(db, 'vaults', fbUser.uid);
+      try {
+        await setDoc(docRef, transferPayload);
+      } catch (firestoreErr) {
+        handleFirestoreError(firestoreErr, OperationType.WRITE, 'vaults');
+      }
+
+      const nowStr = new Date().toLocaleString('pt-BR');
+      setFbLastSync(nowStr);
+      localStorage.setItem('secure_fb_last_sync', nowStr);
+      triggerAlert('Backup Concluído', 'Seu cofre foi criptografado localmente e salvo na nuvem segura do Firebase!');
+    } catch (error: any) {
+      console.error(error);
+      triggerAlert('Erro de Sincronização', `Não foi possível enviar para o Firebase: ${error.message}`);
+    } finally {
+      setFbIsLoading(false);
+    }
+  };
+
+  const handleFbRestore = async () => {
+    if (!fbUser) {
+      triggerAlert('Nuvem Desconectada', 'Por favor, conecte a sua conta Firebase antes de restaurar.');
+      return;
+    }
+
+    triggerConfirm(
+      'Restaurar da Nuvem Firebase',
+      'Isso substituirá TODOS os seus registros locais atualmente armazenados nesta máquina pelos dados salvos no seu backup do Firebase. Deseja realmente prosseguir com a restauração?',
+      async () => {
+        setFbIsLoading(true);
+        try {
+          const docRef = doc(db, 'vaults', fbUser.uid);
+          let docSnap;
+          try {
+            docSnap = await getDoc(docRef);
+          } catch (firestoreErr) {
+            handleFirestoreError(firestoreErr, OperationType.GET, 'vaults');
+          }
+          
+          if (!docSnap || !docSnap.exists()) {
+            triggerAlert('Cofre Vazio', 'Não encontramos nenhum backup salvo para a sua conta no Firebase Firestore.');
+            return;
+          }
+
+          const data = docSnap.data();
+          if (!data.records || !data.config) {
+            triggerAlert('Erro no Formato', 'Os dados de backup salvos no Firebase parecem corrompidos ou incompletos.');
+            return;
+          }
+
+          // Overwrite local credentials
+          localStorage.setItem('secure_config', JSON.stringify(data.config));
+          localStorage.setItem('secure_records', JSON.stringify(data.records));
+
+          // If masterPassword is already set (user is logged in) and matches, we decrypt right away
+          const isValidPassword = masterPassword ? await verifyPassword(data.config.verificationPayload, masterPassword) : false;
+          
+          if (masterPassword && isValidPassword) {
+            await decryptAllData(masterPassword);
+            triggerAlert('Restauração Concluída', 'Seu cofre de senhas foi restaurado do Firebase com pleno sucesso e recarregado na tela!');
+          } else {
+            handleLockVault();
+            setIsSetup(true);
+            triggerAlert('Restauração Concluída', 'Seu cofre foi restaurado com sucesso! Digite a senha mestra correspondente ao cofre baixado para desbloquear.');
+          }
+
+          const nowStr = new Date().toLocaleString('pt-BR');
+          setFbLastSync(nowStr);
+          localStorage.setItem('secure_fb_last_sync', nowStr);
+        } catch (error: any) {
+          console.error(error);
+          triggerAlert('Erro de Restauração', `Não foi possível baixar os dados do Firebase: ${error.message}`);
+        } finally {
+          setFbIsLoading(false);
+        }
+      },
+      false,
+      'Restaurar do Firebase'
+    );
+  };
+
+  const handleFbLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fbEmail.trim() || !fbPassword) {
+      triggerAlert('Campos Vazios', 'Por favor digite o e-mail e a senha do Firebase Sync.');
+      return;
+    }
+    setFbIsLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, fbEmail.trim(), fbPassword);
+      setFbPassword('');
+      triggerAlert('Conectado!', 'Seu aplicativo está agora integrado e sincronizado com a nuvem do Firebase.');
+    } catch (error: any) {
+      console.error(error);
+      let errMsg = 'Falha ao logar. Verifique os dados inseridos.';
+      if (error.code === 'auth/operation-not-allowed') {
+        errMsg = 'O provedor de E-mail/Senha não está ativado no Firebase Console para este projeto. Por favor, utilize o botão "Entrar com o Google" (que funciona imediatamente) ou ative o provedor "E-mail/senha" nas configurações de Autenticação do Console Firebase.';
+      } else if (error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        errMsg = 'E-mail ou senha inválidos.';
+      }
+      triggerAlert('Erro de Autenticação', errMsg);
+    } finally {
+      setFbIsLoading(false);
+    }
+  };
+
+  const handleFbRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fbEmail.trim() || !fbPassword) {
+      triggerAlert('Campos Vazios', 'Por favor preencha todos os campos para realizar o cadastro.');
+      return;
+    }
+    if (fbPassword.length < 6) {
+      triggerAlert('Senha Curta', 'A senha do Firebase deve conter ao menos 6 caracteres.');
+      return;
+    }
+    setFbIsLoading(true);
+    try {
+      await createUserWithEmailAndPassword(auth, fbEmail.trim(), fbPassword);
+      setFbPassword('');
+      triggerAlert('Conta Criada!', 'Sua conta Firebase Sync foi cadastrada com sucesso e está conectada!');
+    } catch (error: any) {
+      console.error(error);
+      let errMsg = 'Não foi possível cadastrar sua conta.';
+      if (error.code === 'auth/operation-not-allowed') {
+        errMsg = 'O provedor de E-mail/Senha não está ativado no Firebase Console para este projeto. Por favor, utilize o botão "Entrar com o Google" (que funciona imediatamente) ou ative o provedor "E-mail/senha" nas configurações de Autenticação do Console Firebase.';
+      } else if (error.code === 'auth/email-already-in-use') {
+        errMsg = 'Este endereço de e-mail já está sendo utilizado.';
+      }
+      triggerAlert('Erro de Cadastro', errMsg);
+    } finally {
+      setFbIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setFbIsLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      triggerAlert('Conectado!', 'Seu aplicativo está agora integrado e sincronizado com a nuvem do Firebase (Google Auth).');
+    } catch (error: any) {
+      if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+        console.warn('Firebase Google Sign-In user canceled or closed (handled):', error);
+      } else {
+        console.error(error);
+      }
+      let errMsg = `Erro no Google Sign-In: ${error.message}`;
+      
+      if (error.code === 'auth/operation-not-allowed') {
+        errMsg = 'O provedor do Google não está ativado no Firebase Console para este projeto. Por favor, ative-o nas configurações de Autenticação do Console do Firebase.';
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        errMsg = 'A janela de autenticação do Google foi fechada antes da conclusão do login. Se você deseja conectar sua conta do Google, por favor tente novamente e conclua o fluxo na janela que se abre.';
+      } else if (error.code === 'auth/popup-blocked') {
+        errMsg = 'A janela de login do Google foi bloqueada pelo navegador. Como o aplicativo está sendo executado dentro de uma área de preview (iframe), os navegadores podem bloquear popups por segurança. Para corrigir:\n\n1. Abra o aplicativo em uma nova aba cheia clicando no ícone do link no canto superior direito.\n2. Permita popups para este site nas configurações do seu navegador.';
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        errMsg = 'A solicitação de login foi cancelada ou sobreposta por outra ação. Por favor, tente novamente.';
+      }
+      
+      triggerAlert('Autenticação Pendente', errMsg);
+    } finally {
+      setFbIsLoading(false);
+    }
+  };
+
+  const handleFbLogout = async () => {
+    setFbIsLoading(true);
+    try {
+      await signOut(auth);
+      setFbUser(null);
+      triggerAlert('Nuvem Desconectada', 'Você saiu da sua conta Firebase Sync com sucesso.');
+    } catch (error: any) {
+      console.error(error);
+      triggerAlert('Erro', 'Houve um erro ao tentar sair da sua conta.');
+    } finally {
+      setFbIsLoading(false);
+    }
+  };
+
   // ----------------------------------------------------
   // Live Instant Query Processing logic
   // ----------------------------------------------------
@@ -876,6 +1309,24 @@ export default function App() {
                             {showPlainPasswordInput ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
                         </div>
+
+                        {/* Password Strength Indicator */}
+                        {setupPassword && (
+                          <div className="space-y-1 mt-1.5 px-1">
+                            <div className="flex justify-between items-center text-[9px]">
+                              <span className="text-slate-500 font-sans">Análise de Segurança:</span>
+                              <span className="font-bold uppercase tracking-wider font-mono text-[10px]" style={{ color: calculatePasswordStrength(setupPassword).score <= 1 ? '#f87171' : calculatePasswordStrength(setupPassword).score === 2 ? '#fb923c' : calculatePasswordStrength(setupPassword).score === 3 ? '#facc15' : calculatePasswordStrength(setupPassword).score === 4 ? '#34d399' : '#22d3ee' }}>
+                                {calculatePasswordStrength(setupPassword).label}
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-900/40">
+                              <div 
+                                className={`h-full ${calculatePasswordStrength(setupPassword).color} transition-all duration-300`} 
+                                style={{ width: `${calculatePasswordStrength(setupPassword).percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-2 text-left">
@@ -1147,8 +1598,29 @@ export default function App() {
                                         </div>
                                       ) : (
                                         // Plainly visible unlocked answer
-                                        <div className="space-y-1">
-                                          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Resposta Criptografada:</div>
+                                        <div className="space-y-1.5" id="exact-match-answer-block">
+                                          <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                                            <span>Resposta Criptografada:</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCopyToClipboard(exactMatchedRecord.answer, exactMatchedRecord.id)}
+                                              className="flex items-center space-x-1.5 py-0.5 px-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 hover:border-emerald-500/35 rounded-lg cursor-pointer transition text-[9px] font-mono leading-none font-bold"
+                                              title="Copiar para Área de Transferência"
+                                              id="copy-exact-btn"
+                                            >
+                                              {copiedNotification?.id === exactMatchedRecord.id ? (
+                                                <>
+                                                  <Check className="h-2.5 w-2.5 text-cyan-400 animate-pulse" />
+                                                  <span className="text-cyan-400 font-bold">Limpa em {copiedNotification.secondsLeft}s</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Copy className="h-2.5 w-2.5" />
+                                                  <span>Copiar</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          </div>
                                           <div className="p-3 bg-emerald-500/10 border border-emerald-500/15 text-white font-medium rounded-xl text-xs selection:bg-emerald-500/30 whitespace-pre-wrap select-all break-all leading-relaxed shadow-inner">
                                             {exactMatchedRecord.answer}
                                           </div>
@@ -1249,6 +1721,141 @@ export default function App() {
                               />
                             </div>
 
+                            {/* COLLAPSIBLE PASSWORD GENERATOR WIDGET */}
+                            <div className="space-y-2 p-3 bg-[#090b11]/50 border border-slate-900/85 rounded-xl hover:border-slate-800/80 transition shadow-inner">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowGenerator(!showGenerator);
+                                  if (!showGenerator) {
+                                    generateSecurePassword();
+                                  }
+                                }}
+                                className="w-full flex items-center justify-between text-left text-slate-300 hover:text-white transition cursor-pointer"
+                                id="toggle-generator-btn"
+                              >
+                                <div className="flex items-center space-x-2 text-[10.5px] font-bold uppercase tracking-wider font-sans">
+                                  <KeyRound className="h-3.5 w-3.5 text-emerald-400" />
+                                  <span>Gerador de Senhas Seguras</span>
+                                </div>
+                                <span className="text-[10px] text-slate-500 font-mono font-bold">
+                                  {showGenerator ? 'OCULTAR ↑' : 'EXPANDIR ↓'}
+                                </span>
+                              </button>
+
+                              {showGenerator && (
+                                <motion.div
+                                  initial={{ opacity: 0, height: 0 }}
+                                  animate={{ opacity: 1, height: 'auto' }}
+                                  exit={{ opacity: 0, height: 0 }}
+                                  className="pt-2 space-y-3 border-t border-slate-950/60 mt-1 pb-1"
+                                  id="password-generator-controls"
+                                >
+                                  {/* RESULT VISUAL CONTAINER */}
+                                  <div className="space-y-1">
+                                    <div className="text-[9px] text-slate-500 font-mono uppercase tracking-widest font-bold">Senha Gerada:</div>
+                                    <div className="relative flex items-center bg-slate-950/70 border border-slate-900/60 p-2.5 rounded-xl font-mono text-xs text-cyan-400 select-all break-all leading-normal text-center min-h-[36px] shadow-inner font-bold pr-10">
+                                      {genResult || 'Selecione pelo menos uma opção'}
+                                      
+                                      {genResult && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleCopyToClipboard(genResult, 'genResult')}
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-white rounded-lg transition"
+                                          title="Copiar para clipboard"
+                                        >
+                                          {copiedNotification?.id === 'genResult' ? (
+                                            <Check className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                                          ) : (
+                                            <Copy className="h-3.5 w-3.5" />
+                                          )}
+                                        </button>
+                                      )}
+                                    </div>
+                                    
+                                    {copiedNotification?.id === 'genResult' && (
+                                      <p className="text-[8.5px] text-cyan-400 font-mono uppercase tracking-wider text-right pr-1">
+                                        ✓ Copiado! Clipboard apaga em {copiedNotification.secondsLeft}s
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* SLIDER FOR LENGTH */}
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-center text-[9.5px]">
+                                      <span className="text-slate-400 uppercase tracking-widest font-bold">Comprimento da Senha</span>
+                                      <span className="font-mono text-emerald-400 font-bold">{genLength} caracteres</span>
+                                    </div>
+                                    <input 
+                                      type="range"
+                                      min={8}
+                                      max={64}
+                                      value={genLength}
+                                      onChange={(e) => setGenLength(parseInt(e.target.value))}
+                                      className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-slate-950 rounded-lg appearance-none"
+                                    />
+                                  </div>
+
+                                  {/* CONFIG CHECKBOX OPTIONS */}
+                                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                    <label className="flex items-center space-x-2 bg-slate-950/45 p-1.5 rounded-md border border-slate-950 cursor-pointer text-slate-300 hover:text-white hover:bg-slate-950/60">
+                                      <input 
+                                        type="checkbox"
+                                        checked={genUpper}
+                                        onChange={(e) => setGenUpper(e.target.checked)}
+                                        className="rounded border-slate-800 bg-[#090b11] text-emerald-500 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                                      />
+                                      <span className="font-sans leading-none font-bold">A-Z (Maiúsculas)</span>
+                                    </label>
+
+                                    <label className="flex items-center space-x-2 bg-slate-950/45 p-1.5 rounded-md border border-slate-950 cursor-pointer text-slate-300 hover:text-white hover:bg-slate-950/60">
+                                      <input 
+                                        type="checkbox"
+                                        checked={genLower}
+                                        onChange={(e) => setGenLower(e.target.checked)}
+                                        className="rounded border-slate-800 bg-[#090b11] text-emerald-500 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                                      />
+                                      <span className="font-sans leading-none font-bold">a-z (Minúsculas)</span>
+                                    </label>
+
+                                    <label className="flex items-center space-x-2 bg-slate-950/45 p-1.5 rounded-md border border-slate-950 cursor-pointer text-slate-300 hover:text-white hover:bg-slate-950/60">
+                                      <input 
+                                        type="checkbox"
+                                        checked={genNumbers}
+                                        onChange={(e) => setGenNumbers(e.target.checked)}
+                                        className="rounded border-slate-800 bg-[#090b11] text-emerald-500 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                                      />
+                                      <span className="font-sans leading-none font-bold">0-9 (Algarismos)</span>
+                                    </label>
+
+                                    <label className="flex items-center space-x-2 bg-slate-950/45 p-1.5 rounded-md border border-slate-950 cursor-pointer text-slate-300 hover:text-white hover:bg-slate-950/60">
+                                      <input 
+                                        type="checkbox"
+                                        checked={genSymbols}
+                                        onChange={(e) => setGenSymbols(e.target.checked)}
+                                        className="rounded border-slate-800 bg-[#090b11] text-emerald-500 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                                      />
+                                      <span className="font-sans leading-none font-bold">@#$ (Especiais)</span>
+                                    </label>
+                                  </div>
+
+                                  {/* APPLY TO FORM RESPONSE BUTTON */}
+                                  {genResult && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNewAnswer(genResult);
+                                        setShowGenerator(false);
+                                      }}
+                                      className="w-full py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 rounded-lg text-[10px] font-sans font-bold uppercase cursor-pointer transition select-none flex items-center justify-center space-x-1"
+                                    >
+                                      <span>✓ Usar como Resposta</span>
+                                    </button>
+                                  )}
+                                </motion.div>
+                              )}
+                            </div>
+
                             <div className="p-3 bg-[#090b11]/80 border border-slate-800/80 rounded-xl shadow-inner">
                               <div className="flex items-center space-x-2.5">
                                 <input 
@@ -1329,7 +1936,26 @@ export default function App() {
                                           <div className="text-emerald-300 font-mono text-[11px] whitespace-pre-wrap select-all break-all leading-normal bg-emerald-950/5 p-2 rounded-lg border border-emerald-950/15 shadow-inner">
                                             {item.answer}
                                           </div>
-                                          <div className="flex justify-end">
+                                          <div className="flex items-center justify-between pt-0.5">
+                                            <button
+                                              onClick={() => handleCopyToClipboard(item.answer, item.id)}
+                                              className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 font-mono uppercase tracking-wider flex items-center space-x-1 cursor-pointer"
+                                              title="Copiar Resposta"
+                                              id={`copy-cofre-${item.id}`}
+                                            >
+                                              {copiedNotification?.id === item.id ? (
+                                                <>
+                                                  <Check className="h-3 w-3 text-cyan-400 animate-pulse" />
+                                                  <span className="text-cyan-400 font-bold">Limpa em {copiedNotification.secondsLeft}s</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <Copy className="h-3 w-3" />
+                                                  <span>Copiar</span>
+                                                </>
+                                              )}
+                                            </button>
+
                                             <button
                                               onClick={() => {
                                                 setRevealedInCofre(prev => ({ ...prev, [item.id]: false }));
@@ -1388,171 +2014,6 @@ export default function App() {
                               })}
                             </div>
                           )}
-
-                          {/* Vault backups & complete management (Moved to top Settings gear icon) */}
-                          <div className="hidden" id="legacy-records-settings">
-                            
-                            <div className="grid grid-cols-2 gap-2">
-                              {/* EXPORT BUTTON */}
-                              <button
-                                onClick={handleExportBackup}
-                                className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
-                                id="btn-export-records"
-                              >
-                                <Download className="h-3.5 w-3.5 text-emerald-400" />
-                                <span>Exportar JSON</span>
-                              </button>
-
-                              {/* IMPORT BUTTON */}
-                              <button
-                                onClick={() => fileInputRef.current?.click()}
-                                className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
-                                id="btn-import-records-unlocked"
-                              >
-                                <Upload className="h-3.5 w-3.5 text-blue-400" />
-                                <span>Importar JSON</span>
-                              </button>
-                            </div>
-
-                            {/* GOOGLE DRIVE CLOUD BACKUP SECTION */}
-                            <div className="pt-3 border-t border-slate-900/40 space-y-2.5">
-                              <div className="flex items-center justify-between">
-                                <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1">
-                                  <Cloud className="h-3 w-3 text-emerald-400" />
-                                  <span>Backup na Nuvem (Google Drive)</span>
-                                </div>
-                                {gdriveAccessToken ? (
-                                  <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
-                                    Conectado
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono">
-                                    Desconectado
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* GDrive status info / instructions */}
-                              {gdriveAccessToken ? (
-                                <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2 text-left">
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <div className="text-[10px] text-slate-400">Conta conectada:</div>
-                                      <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{gdriveUserEmail}</div>
-                                    </div>
-                                    <button 
-                                      onClick={handleDisconnectGDrive}
-                                      className="text-[9px] font-bold text-red-400 hover:underline uppercase tracking-wider font-mono flex items-center space-x-1"
-                                    >
-                                      <span>Desconectar</span>
-                                    </button>
-                                  </div>
-
-                                  {gdriveLastSync && (
-                                    <div className="text-[9px] text-slate-500 font-mono">
-                                      Último Sincronismo: <span className="text-slate-400 font-semibold">{gdriveLastSync}</span>
-                                    </div>
-                                  )}
-
-                                  {gdriveIsSyncing && gdriveStatusMessage && (
-                                    <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
-                                      <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
-                                      <span>{gdriveStatusMessage}</span>
-                                    </div>
-                                  )}
-
-                                  <div className="grid grid-cols-2 gap-2 pt-1.5">
-                                    <button
-                                      onClick={handleGDriveBackup}
-                                      disabled={gdriveIsSyncing}
-                                      className="py-2 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
-                                    >
-                                      <RefreshCw className={`h-3 w-3 ${gdriveIsSyncing ? 'animate-spin' : ''}`} />
-                                      <span>Salvar na Nuvem</span>
-                                    </button>
-                                    <button
-                                      onClick={handleGDriveRestore}
-                                      disabled={gdriveIsSyncing}
-                                      className="py-2 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
-                                    >
-                                      <Download className="h-3 w-3" />
-                                      <span>Baixar da Nuvem</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="p-3 bg-[#090b11]/30 border border-slate-900 rounded-xl space-y-2 text-left bg-[#090b11]/60">
-                                  <p className="text-[10px] text-slate-400 leading-relaxed">
-                                    Salve seus dados criptografados com segurança de ponta-a-ponta na sua própria nuvem.
-                                  </p>
-
-                                  <button
-                                    onClick={() => handleConnectGDrive()}
-                                    className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
-                                  >
-                                    <Cloud className="h-3.5 w-3.5" />
-                                    <span>Autenticar & Conectar</span>
-                                  </button>
-
-                                  <div className="pt-1.5 border-t border-slate-900/60">
-                                    <button
-                                      onClick={() => setShowGDriveClientSetup(!showGDriveClientSetup)}
-                                      className="w-full text-center text-[9px] text-slate-500 hover:text-slate-400 uppercase font-bold tracking-wider font-mono py-1 cursor-pointer"
-                                    >
-                                      {showGDriveClientSetup ? 'Ocultar Configurações de API ✕' : 'Ver ID do Cliente Google &rarr;'}
-                                    </button>
-
-                                    {showGDriveClientSetup && (
-                                      <motion.div 
-                                        initial={{ opacity: 0, height: 0 }}
-                                        animate={{ opacity: 1, height: 'auto' }}
-                                        className="space-y-2 pt-2 text-left"
-                                      >
-                                        <div className="space-y-1">
-                                          <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
-                                            Google OAuth 2.0 Client ID
-                                          </label>
-                                          <input
-                                            type="text"
-                                            value={gdriveClientId}
-                                            onChange={(e) => {
-                                              const val = e.target.value;
-                                              setGdriveClientId(val);
-                                              localStorage.setItem('secure_google_client_id', val);
-                                            }}
-                                            placeholder="Ex: 749364...apps.googleusercontent.com"
-                                            className="w-full bg-[#05070a] border border-slate-900 focus:border-slate-800 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none"
-                                          />
-                                        </div>
-                                        <p className="text-[9px] text-slate-500 leading-normal font-sans">
-                                          Nós usamos o escopo seguro e limitado <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
-                                        </p>
-                                      </motion.div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* PURGE VAULT BUTTON */}
-                            <button
-                              onClick={handlePurgeVault}
-                              className="w-full py-2.5 bg-red-950/20 hover:bg-red-950/30 border border-red-900/30 text-red-400 text-[10px] rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold"
-                              id="btn-purge-records-unlocked"
-                            >
-                              <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                              <span>Deletar Todo o Cofre (Apagar Dados)</span>
-                            </button>
-
-                            {/* Live Import Status Message */}
-                            {importStatus && (
-                              <div className={`p-2.5 border text-[10px] text-center rounded-xl font-mono ${
-                                importStatus.success ? 'bg-emerald-950/20 border-emerald-500/20 text-emerald-400' : 'bg-red-950/20 border-red-500/20 text-red-400'
-                              }`}>
-                                {importStatus.message}
-                              </div>
-                            )}
-                          </div>
                         </div>
                       )}
 
@@ -1661,24 +2122,34 @@ export default function App() {
                     {/* CARD 1: JSON BACKUP MANAGEMENT */}
                     <div className="space-y-2" id="json-backup-section">
                       <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Backup Local</div>
-                      <div>
+                      <div className="grid grid-cols-2 gap-2">
                         {/* EXPORT BUTTON */}
                         <button
                           onClick={handleExportBackup}
-                          className="w-full py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
+                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm w-full"
                           id="settings-export-btn"
                         >
                           <Download className="h-3.5 w-3.5 text-emerald-400" />
                           <span>Exportar JSON</span>
                         </button>
+
+                        {/* IMPORT BUTTON */}
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm w-full"
+                          id="settings-import-btn"
+                        >
+                          <Upload className="h-3.5 w-3.5 text-blue-400" />
+                          <span>Importar JSON</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* CARD 2: GOOGLE DRIVE BACKUP */}
+                    {/* CARD 2: GOOGLE DRIVE CLOUD BACKUP */}
                     <div className="space-y-2.5" id="gdrive-backup-section">
                       <div className="flex items-center justify-between">
-                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1 flex-wrap gap-1">
-                          <Cloud className="h-3 w-3 text-emerald-400" />
+                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
+                          <Cloud className="h-3.5 w-3.5 text-emerald-400" />
                           <span>Backup na Nuvem (Google Drive)</span>
                         </div>
                         {gdriveAccessToken ? (
@@ -1694,7 +2165,7 @@ export default function App() {
 
                       {/* GDrive status info / instructions */}
                       {gdriveAccessToken ? (
-                        <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2 text-left">
+                        <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
                           <div className="flex justify-between items-start">
                             <div>
                               <div className="text-[10px] text-slate-400">Conta conectada:</div>
@@ -1702,7 +2173,7 @@ export default function App() {
                             </div>
                             <button 
                               onClick={handleDisconnectGDrive}
-                              className="text-[9px] font-bold text-red-400 hover:underline uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer"
+                              className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer"
                             >
                               <span>Desconectar</span>
                             </button>
@@ -1721,46 +2192,45 @@ export default function App() {
                             </div>
                           )}
 
-                          <div className="grid grid-cols-2 gap-2 pt-1.5">
+                          <div className="grid grid-cols-2 gap-2 pt-1">
                             <button
                               onClick={handleGDriveBackup}
                               disabled={gdriveIsSyncing}
-                              className="py-2 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
+                              className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
                             >
                               <RefreshCw className={`h-3 w-3 ${gdriveIsSyncing ? 'animate-spin' : ''}`} />
-                              <span>Salvar na Nuvem</span>
+                              <span>Salvar Nuvem</span>
                             </button>
                             <button
                               onClick={handleGDriveRestore}
                               disabled={gdriveIsSyncing}
-                              className="py-2 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer"
+                              className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
                             >
                               <Download className="h-3 w-3" />
-                              <span>Baixar da Nuvem</span>
+                              <span>Baixar Nuvem</span>
                             </button>
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-2 text-left">
+                        <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
                           <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                            Salve seus dados criptografados com segurança de ponta-a-ponta na sua própria nuvem.
+                            Salve e sincronize seus dados criptografados AES-256 com segurança de ponta-a-ponta na sua conta Google Drive pessoal.
                           </p>
 
                           <button
                             onClick={() => handleConnectGDrive()}
-                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-sm cursor-pointer"
+                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
                           >
                             <Cloud className="h-3.5 w-3.5" />
                             <span>Autenticar & Conectar</span>
                           </button>
 
-                          <div className="pt-1.5 border-t border-slate-900/60 font-sans">
+                          <div className="pt-1.5 border-t border-slate-900/60">
                             <button
-                              type="button"
                               onClick={() => setShowGDriveClientSetup(!showGDriveClientSetup)}
                               className="w-full text-center text-[9px] text-slate-500 hover:text-slate-400 uppercase font-bold tracking-wider font-mono py-1 cursor-pointer"
                             >
-                              {showGDriveClientSetup ? 'Ocultar Configurações de API ✕' : 'Ver ID do Cliente Google \u2192'}
+                              {showGDriveClientSetup ? 'Ocultar ID do Cliente Google ✕' : 'Ver ID do Cliente Google &rarr;'}
                             </button>
 
                             {showGDriveClientSetup && (
@@ -1770,7 +2240,7 @@ export default function App() {
                                 className="space-y-2 pt-2 text-left"
                               >
                                 <div className="space-y-1">
-                                  <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+                                  <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
                                     Google OAuth 2.0 Client ID
                                   </label>
                                   <input
@@ -1782,11 +2252,11 @@ export default function App() {
                                       localStorage.setItem('secure_google_client_id', val);
                                     }}
                                     placeholder="Ex: 749364...apps.googleusercontent.com"
-                                    className="w-full bg-[#05070a] border border-slate-900 focus:border-slate-800 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none"
+                                    className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none focus:border-slate-800"
                                   />
                                 </div>
                                 <p className="text-[9px] text-slate-500 leading-normal font-sans">
-                                  Nós usamos o escopo seguro e limitado <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
+                                  Usamos o escopo seguro e restrito <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
                                 </p>
                               </motion.div>
                             )}
@@ -1794,7 +2264,236 @@ export default function App() {
                         </div>
                       )}
                     </div>
- 
+
+                    {/* CARD 3: FIREBASE CLOUD SYNC */}
+                    <div className="space-y-2.5" id="firebase-sync-section">
+                      <div className="flex items-center justify-between">
+                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
+                          <Cloud className="h-4 w-4 text-emerald-400" />
+                          <span>Backup na Nuvem (Firebase)</span>
+                        </div>
+                        {fbUser ? (
+                          <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
+                            Conectado
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
+                            Desconectado
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Firebase sync panel */}
+                      {fbUser ? (
+                        <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className="text-[10px] text-slate-400">Conta sincronizada:</div>
+                              <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{fbUser.email}</div>
+                            </div>
+                            <button 
+                              onClick={handleFbLogout}
+                              disabled={fbIsLoading}
+                              className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                            >
+                              <span>Sair</span>
+                            </button>
+                          </div>
+
+                          {fbLastSync && (
+                            <div className="text-[9px] text-slate-500 font-mono">
+                              Último Sincronismo: <span className="text-slate-400 font-semibold">{fbLastSync}</span>
+                            </div>
+                          )}
+
+                          {fbIsLoading && (
+                            <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
+                              <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                              <span>Sincronizando dados com Firebase...</span>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-2 pt-1">
+                            <button
+                              onClick={handleFbBackup}
+                              disabled={fbIsLoading}
+                              className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                            >
+                              <RefreshCw className={`h-3 w-3 ${fbIsLoading ? 'animate-spin' : ''}`} />
+                              <span>Salvar Nuvem</span>
+                            </button>
+                            <button
+                              onClick={handleFbRestore}
+                              disabled={fbIsLoading}
+                              className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                            >
+                              <Download className="h-3 w-3" />
+                              <span>Baixar Nuvem</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
+                          <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                            Crie sua conta ou faça login para sincronizar e salvar com segurança o seu cofre end-to-end criptografado (AES-256) na nuvem do Firebase.
+                          </p>
+
+                          <form onSubmit={fbMode === 'login' ? handleFbLogin : handleFbRegister} className="space-y-3">
+                            <div className="space-y-2">
+                              <div>
+                                <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                  E-mail
+                                </label>
+                                <input
+                                  type="email"
+                                  required
+                                  value={fbEmail}
+                                  onChange={(e) => setFbEmail(e.target.value)}
+                                  placeholder="Digite seu e-mail"
+                                  className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                  Senha do Firebase Sync
+                                </label>
+                                <input
+                                  type="password"
+                                  required
+                                  value={fbPassword}
+                                  onChange={(e) => setFbPassword(e.target.value)}
+                                  placeholder="Ao menos 6 caracteres"
+                                  className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
+                                />
+                              </div>
+                            </div>
+
+                            <button
+                              type="submit"
+                              disabled={fbIsLoading}
+                              className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
+                            >
+                              {fbIsLoading ? (
+                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Cloud className="h-3.5 w-3.5" />
+                              )}
+                              <span>{fbMode === 'login' ? 'Entrar & Sincronizar' : 'Criar Conta & Sincronizar'}</span>
+                            </button>
+                          </form>
+
+                          <div className="relative my-3">
+                            <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                              <div className="w-full border-t border-slate-900"></div>
+                            </div>
+                            <div className="relative flex justify-center text-xs uppercase font-mono">
+                              <span className="bg-[#0b0e14] px-2 text-slate-500 font-semibold text-[9px]">ou use</span>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleGoogleSignIn}
+                            disabled={fbIsLoading}
+                            className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+                          >
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
+                              <path
+                                fill="currentColor"
+                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                              />
+                              <path
+                                fill="currentColor"
+                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                              />
+                              <path
+                                fill="currentColor"
+                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
+                              />
+                              <path
+                                fill="currentColor"
+                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
+                              />
+                            </svg>
+                            <span>Entrar com o Google</span>
+                          </button>
+
+                          <div className="text-center pt-2.5 border-t border-slate-900 flex items-center justify-center space-x-2 text-[9.5px] text-slate-400">
+                            <span>{fbMode === 'login' ? 'Não possui conta?' : 'Já possui conta?'}</span>
+                            <button
+                              type="button"
+                              onClick={() => setFbMode(fbMode === 'login' ? 'register' : 'login')}
+                              className="font-bold text-emerald-400 hover:underline uppercase tracking-wider font-mono cursor-pointer"
+                            >
+                              {fbMode === 'login' ? 'Cadastrar' : 'Entrar'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* CARD: CONFIGURAÇÕES GLOBAIS DE SEGURANÇA */}
+                    <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left" id="global-security-settings-section">
+                      <div className="flex items-center space-x-1.5 uppercase font-bold text-slate-400 text-[10px] tracking-wider font-sans">
+                        <Shield className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                        <span>Parâmetros de Segurança Avançada</span>
+                      </div>
+
+                      <div className="space-y-4 pt-1">
+                        {/* Auto Lock Timeout Select */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+                            Auto-Bloqueio por Inatividade
+                          </label>
+                          <select
+                            value={autoLockTimeout}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setAutoLockTimeout(val);
+                              localStorage.setItem('secure_autolock_timeout', val);
+                            }}
+                            className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] font-mono p-2 rounded-xl focus:outline-none focus:border-slate-800 cursor-pointer"
+                          >
+                            <option value="1">1 Minuto</option>
+                            <option value="2">2 Minutos</option>
+                            <option value="5">5 Minutos (Recomendado)</option>
+                            <option value="10">10 Minutos</option>
+                            <option value="30">30 Minutos</option>
+                            <option value="0">⚠️ Desativar Auto-Bloqueio</option>
+                          </select>
+                          <p className="text-[9px] text-slate-500 leading-tight">
+                            O vault trancará a tela automaticamente e limpará a memória RAM do app se nenhuma atividade for detectada.
+                          </p>
+                        </div>
+
+                        {/* Clipboard Auto Clear Timeout Select */}
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block">
+                            Limpeza da Área de Transferência
+                          </label>
+                          <select
+                            value={clipboardTimeout}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setClipboardTimeout(val);
+                              localStorage.setItem('secure_clipboard_timeout', val);
+                            }}
+                            className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] font-mono p-2 rounded-xl focus:outline-none focus:border-slate-800 cursor-pointer"
+                          >
+                            <option value="15">15 Segundos</option>
+                            <option value="30">30 Segundos (Recomendado)</option>
+                            <option value="45">45 Segundos</option>
+                            <option value="60">60 Segundos</option>
+                            <option value="0">⚠️ Desativar Auto-Limpeza</option>
+                          </select>
+                          <p className="text-[9px] text-slate-500 leading-tight">
+                            Apaga automaticamente os dados copiados do clipboard após o tempo configurado para evitar vazamentos.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* CARD: CRIPTOGRAFIA E DETALHES TECNICOS */}
                     <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left" id="crypto-spec-section">
                       <div className="flex items-center justify-between">

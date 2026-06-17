@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable, hardened global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Vault validation blueprint helper
+    function isValidVault(data) {
+      return data.config is map 
+        && data.records is list 
+        && data.updatedAt is string 
+        && data.updatedAt.size() <= 128;
+    }
+
+    // Hardened match definition for Vaults collection
+    match /vaults/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow create, update: if isOwner(userId) && isValidId(userId) && isValidVault(incoming());
+      allow delete: if isOwner(userId) && isValidId(userId);
+    }
+  }
+}

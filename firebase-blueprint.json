@@ -1,0 +1,31 @@
+{
+  "entities": {
+    "Vault": {
+      "title": "Vault",
+      "description": "Cofre de senhas criptografado do usuário",
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "object",
+          "description": "Configuração de verificação de senha mestra"
+        },
+        "records": {
+          "type": "array",
+          "description": "Lista de registros criptografados"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Carimbo de data/hora do último backup"
+        }
+      },
+      "required": ["config", "records", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/vaults/{userId}": {
+      "schema": "Vault",
+      "description": "Coleção de backups dos cofres dos usuários"
+    }
+  }
+}
