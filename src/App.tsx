@@ -1460,9 +1460,30 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.98 }}
-                    className="space-y-6 py-6"
+                    className="space-y-6 py-2"
                     id="setup-pane"
                   >
+                    {/* CUSTOM HORIZONTAL HEADER FOR SETUP SCREEN */}
+                    <div className="flex items-center justify-between py-3 border-b border-slate-900/60 mb-2" id="setup-header">
+                      <div className="flex items-center space-x-2.5">
+                        <img
+                          src={vaultLogo}
+                          alt="CRYPTORAPP"
+                          referrerPolicy="no-referrer"
+                          className="w-9 h-9 rounded-xl object-cover shadow-[0_0_15px_rgba(16,185,129,0.3)] filter contrast-125"
+                        />
+                        <div className="flex flex-col items-center justify-center h-9 gap-0.5">
+                          <span className="text-[11px] font-sans font-black tracking-widest text-[#10b981] uppercase leading-none">CRYPTOR</span>
+                          <span className="text-[11px] font-sans font-black tracking-widest text-[#10b981] uppercase leading-none">APP</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-start justify-center h-9 gap-0.5 pr-1 text-left">
+                        <h2 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h2>
+                        <span className="text-[9px] text-emerald-400 tracking-wider font-mono leading-none">ENCRYPTED VAULT LIVE</span>
+                      </div>
+                    </div>
+
                     <div className="text-center space-y-2">
                       <div className="inline-block p-4.5 bg-gradient-to-tr from-emerald-500/10 to-teal-500/5 text-emerald-400 border border-emerald-500/20 rounded-2xl mb-1 shadow-[0_0_20px_rgba(16,185,129,0.05)]" id="icon-container">
                         <KeyRound className="h-8 w-8 animate-pulse text-emerald-400" />
