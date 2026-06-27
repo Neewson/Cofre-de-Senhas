@@ -878,38 +878,69 @@ export default function App() {
     const fileName = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
     const jsonString = JSON.stringify(transferPayload, null, 2);
 
+    // 1. First preference: Capacitor Native Platform
     if (Capacitor.isNativePlatform()) {
       try {
-        // Try file-based sharing first
-        try {
-          const result = await Filesystem.writeFile({
-            path: fileName,
-            data: jsonString,
-            directory: Directory.Cache,
-            encoding: Encoding.UTF8,
-          });
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: jsonString,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
 
-          await Share.share({
-            title: 'Backup do Cofre de Senhas',
-            text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
-            url: result.uri,
-            dialogTitle: 'Salvar/Compartilhar Backup',
-          });
-        } catch (shareFileErr: any) {
-          console.warn('File share failed, falling back to text-based sharing:', shareFileErr);
-          // Fallback to text sharing: extremely robust, bypasses all Android FileProvider limits!
-          await Share.share({
-            title: 'Backup do Cofre de Senhas (Texto)',
-            text: jsonString,
-            dialogTitle: 'Compartilhar Texto do Backup',
-          });
-        }
-      } catch (err: any) {
-        console.error('Error sharing backup in Capacitor:', err);
-        triggerAlert('Erro ao Exportar', `Não foi possível criar ou compartilhar o arquivo de backup: ${err.message || err}`);
+        // Use 'files' array in Share.share which is fully supported and recommended for files on Android/iOS!
+        await Share.share({
+          title: 'Backup do Cofre de Senhas',
+          text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
+          files: [result.uri],
+          dialogTitle: 'Salvar/Compartilhar Backup',
+        });
+        return; // Successfully shared natively!
+      } catch (nativeErr: any) {
+        console.warn('Capacitor native sharing failed, falling back:', nativeErr);
       }
-    } else {
-      // Standard web download
+    }
+
+    // 2. Second preference: Web Share API (extremely robust on modern browsers and hybrid mobile WebViews)
+    if (navigator.share) {
+      try {
+        const file = new File([jsonString], fileName, { type: 'application/json' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Backup do Cofre',
+            text: 'Arquivo de backup criptografado (.json)'
+          });
+          triggerAlert('Backup Exportado', 'O arquivo de backup foi compartilhado com sucesso!');
+          return; // Successfully shared!
+        } else {
+          // Fallback to text sharing via navigator.share
+          await navigator.share({
+            title: 'Backup do Cofre (Texto)',
+            text: jsonString
+          });
+          triggerAlert('Backup Exportado', 'O texto de backup foi compartilhado com sucesso!');
+          return; // Successfully shared!
+        }
+      } catch (webShareErr: any) {
+        console.warn('Web Share API failed, trying browser download fallback:', webShareErr);
+      }
+    }
+
+    // 3. Third preference & Robust fallback: Auto-Copy to Clipboard + standard browser download
+    let clipboardCopied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(jsonString);
+        clipboardCopied = true;
+      } else {
+        clipboardCopied = copyToClipboardFallback(jsonString);
+      }
+    } catch (clipErr) {
+      console.warn('Auto-copy backup to clipboard failed:', clipErr);
+    }
+
+    try {
       const blob = new Blob([jsonString], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -919,7 +950,23 @@ export default function App() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      triggerAlert('Backup Exportado', 'Seu arquivo de backup (.json) foi baixado com sucesso!');
+    } catch (downloadErr) {
+      console.warn('Standard link-click download failed:', downloadErr);
+    }
+
+    if (clipboardCopied) {
+      triggerAlert(
+        'Backup Pronto & Copiado!',
+        'Como alguns navegadores de celular ou aplicativos (APKs) podem bloquear o download direto de arquivos locais, realizamos duas ações:\n\n' +
+        '1. Tentamos baixar o arquivo de backup "' + fileName + '".\n' +
+        '2. Copiamos o texto criptografado completo para a sua Área de Transferência!\n\n' +
+        'Se o arquivo não foi baixado automaticamente no seu dispositivo, não se preocupe: basta colar (Pressionar e Colar / Ctrl+V) em qualquer aplicativo de notas, e-mail ou editor de texto para guardá-lo em segurança!'
+      );
+    } else {
+      triggerAlert(
+        'Backup Gerado!',
+        'Tentamos baixar o arquivo "' + fileName + '". Verifique a pasta de downloads do seu dispositivo.'
+      );
     }
   };
 
