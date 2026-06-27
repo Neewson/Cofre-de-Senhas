@@ -862,6 +862,68 @@ export default function App() {
   };
 
   /**
+   * Export encrypted database backup file (Works on Web and Android APK via Capacitor Filesystem & Share)
+   */
+  const handleExportBackup = async () => {
+    const rawData = localStorage.getItem('secure_records') || '[]';
+    const configData = localStorage.getItem('secure_config') || '{}';
+    
+    const transferPayload = {
+      appIdentifier: 'memo-seguro-criptografado-e2e',
+      exportedAt: new Date().toISOString(),
+      config: JSON.parse(configData),
+      records: JSON.parse(rawData)
+    };
+
+    const fileName = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
+    const jsonString = JSON.stringify(transferPayload, null, 2);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        // Try file-based sharing first
+        try {
+          const result = await Filesystem.writeFile({
+            path: fileName,
+            data: jsonString,
+            directory: Directory.Cache,
+            encoding: Encoding.UTF8,
+          });
+
+          await Share.share({
+            title: 'Backup do Cofre de Senhas',
+            text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
+            url: result.uri,
+            dialogTitle: 'Salvar/Compartilhar Backup',
+          });
+        } catch (shareFileErr: any) {
+          console.warn('File share failed, falling back to text-based sharing:', shareFileErr);
+          // Fallback to text sharing: extremely robust, bypasses all Android FileProvider limits!
+          await Share.share({
+            title: 'Backup do Cofre de Senhas (Texto)',
+            text: jsonString,
+            dialogTitle: 'Compartilhar Texto do Backup',
+          });
+        }
+      } catch (err: any) {
+        console.error('Error sharing backup in Capacitor:', err);
+        triggerAlert('Erro ao Exportar', `Não foi possível criar ou compartilhar o arquivo de backup: ${err.message || err}`);
+      }
+    } else {
+      // Standard web download
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      triggerAlert('Backup Exportado', 'Seu arquivo de backup (.json) foi baixado com sucesso!');
+    }
+  };
+
+  /**
    * Import backup database file securely
    */
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2618,8 +2680,18 @@ export default function App() {
                     
                     {/* CARD 1: JSON BACKUP MANAGEMENT */}
                     <div className="space-y-2" id="json-backup-section">
-                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Restaurar Backup Local</div>
-                      <div>
+                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Backup Local</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* EXPORT BUTTON */}
+                        <button
+                          onClick={handleExportBackup}
+                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm w-full"
+                          id="settings-export-btn"
+                        >
+                          <Download className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>Exportar JSON</span>
+                        </button>
+
                         {/* IMPORT BUTTON */}
                         <button
                           onClick={() => fileInputRef.current?.click()}
@@ -2627,7 +2699,7 @@ export default function App() {
                           id="settings-import-btn"
                         >
                           <Upload className="h-3.5 w-3.5 text-blue-400" />
-                          <span>Importar Arquivo JSON</span>
+                          <span>Importar JSON</span>
                         </button>
                       </div>
 
