@@ -155,6 +155,27 @@ function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMsg:
   ]);
 }
 
+// Fallback clipboard copying utility for older Android WebViews or non-HTTPS native environments
+const copyToClipboardFallback = (text: string): boolean => {
+  const textArea = document.createElement('textarea');
+  textArea.value = text;
+  textArea.style.top = '0';
+  textArea.style.left = '0';
+  textArea.style.position = 'fixed';
+  textArea.style.opacity = '0';
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  let successful = false;
+  try {
+    successful = document.execCommand('copy');
+  } catch (err) {
+    console.error('Fallback copy failed', err);
+  }
+  document.body.removeChild(textArea);
+  return successful;
+};
+
 export default function App() {
   // Authentication & Configuration states
   const [isSetup, setIsSetup] = useState<boolean>(false);
@@ -198,6 +219,8 @@ export default function App() {
   const [showPastedImportSetup, setShowPastedImportSetup] = useState<boolean>(false);
   const [pastedJsonSettings, setPastedJsonSettings] = useState<string>('');
   const [showPastedImportSettings, setShowPastedImportSettings] = useState<boolean>(false);
+  const [showExportedTextSettings, setShowExportedTextSettings] = useState<boolean>(false);
+  const [exportedTextValue, setExportedTextValue] = useState<string>('');
 
   // Google Drive Cloud Backup states
   const [gdriveAccessToken, setGdriveAccessToken] = useState<string | null>(null);
@@ -411,7 +434,12 @@ export default function App() {
    */
   const handleCopyToClipboard = async (text: string, id: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ok = copyToClipboardFallback(text);
+        if (!ok) throw new Error('Fallback copy failed');
+      }
       const secondsSetting = parseInt(clipboardTimeout);
       if (secondsSetting > 0) {
         setCopiedNotification({ id, secondsLeft: secondsSetting });
@@ -854,21 +882,30 @@ export default function App() {
 
     if (Capacitor.isNativePlatform()) {
       try {
-        // write the file in temporary cache directory of Android/iOS device
-        const result = await Filesystem.writeFile({
-          path: fileName,
-          data: jsonString,
-          directory: Directory.Cache,
-          encoding: Encoding.UTF8,
-        });
+        // Try file-based sharing first
+        try {
+          const result = await Filesystem.writeFile({
+            path: fileName,
+            data: jsonString,
+            directory: Directory.Cache,
+            encoding: Encoding.UTF8,
+          });
 
-        // invoke native Android share sheet to let users save it where they want or share it
-        await Share.share({
-          title: 'Backup do Cofre de Senhas',
-          text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
-          url: result.uri,
-          dialogTitle: 'Salvar/Compartilhar Backup',
-        });
+          await Share.share({
+            title: 'Backup do Cofre de Senhas',
+            text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
+            url: result.uri,
+            dialogTitle: 'Salvar/Compartilhar Backup',
+          });
+        } catch (shareFileErr: any) {
+          console.warn('File share failed, falling back to text-based sharing:', shareFileErr);
+          // Fallback to text sharing: extremely robust, bypasses all Android FileProvider limits!
+          await Share.share({
+            title: 'Backup do Cofre de Senhas (Texto)',
+            text: jsonString,
+            dialogTitle: 'Compartilhar Texto do Backup',
+          });
+        }
       } catch (err: any) {
         console.error('Error sharing backup in Capacitor:', err);
         triggerAlert('Erro ao Exportar', `Não foi possível criar ou compartilhar o arquivo de backup: ${err.message || err}`);
@@ -885,6 +922,34 @@ export default function App() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     }
+  };
+
+  /**
+   * Copy the backup payload as raw text (extremely robust for mobile devices)
+   */
+  const handleCopyBackupText = () => {
+    const rawData = localStorage.getItem('secure_records') || '[]';
+    const configData = localStorage.getItem('secure_config') || '{}';
+    
+    const transferPayload = {
+      appIdentifier: 'memo-seguro-criptografado-e2e',
+      exportedAt: new Date().toISOString(),
+      config: JSON.parse(configData),
+      records: JSON.parse(rawData)
+    };
+
+    const jsonString = JSON.stringify(transferPayload, null, 2);
+    setExportedTextValue(jsonString);
+    setShowExportedTextSettings(true);
+
+    navigator.clipboard.writeText(jsonString)
+      .then(() => {
+        triggerAlert('Copiado com Sucesso!', 'O texto completo do seu backup criptografado foi copiado para a sua Área de Transferência. Agora você pode colá-lo e salvá-lo com segurança em suas notas ou onde preferir!');
+      })
+      .catch((err) => {
+        console.warn('Erro ao copiar backup text automatic:', err);
+        triggerAlert('Gerado com Sucesso', 'Seu texto de backup criptografado foi gerado! Como o seu dispositivo impediu a cópia automática, por favor use o campo de texto exibido abaixo para selecionar e copiar manualmente.');
+      });
   };
 
   /**
@@ -1234,8 +1299,8 @@ export default function App() {
       try {
         await promiseWithTimeout(
           setDoc(docRef, transferPayload),
-          8000,
-          'O servidor do Firebase demorou muito para responder (timeout de 8s). Verifique se o banco de dados do Firebase ou se a sua conexão de rede está ativa.'
+          20000,
+          'O servidor do Firebase demorou muito para responder (timeout de 20s). Verifique se o banco de dados do Firebase ou se a sua conexão de rede está ativa.'
         );
       } catch (firestoreErr: any) {
         if (firestoreErr.message && firestoreErr.message.includes('timeout')) {
@@ -1273,8 +1338,8 @@ export default function App() {
           try {
             docSnap = await promiseWithTimeout(
               getDoc(docRef),
-              8000,
-              'O servidor do Firebase demorou muito para responder (timeout de 8s). Verifique sua conexão com a internet ou se o banco de dados do Firebase está acessível.'
+              20000,
+              'O servidor do Firebase demorou muito para responder (timeout de 20s). Verifique sua conexão com a internet ou se o banco de dados do Firebase está acessível.'
             );
           } catch (firestoreErr: any) {
             if (firestoreErr.message && firestoreErr.message.includes('timeout')) {
@@ -2666,6 +2731,31 @@ export default function App() {
                           <span>Importar JSON</span>
                         </button>
                       </div>
+
+                      {/* COPY TEXT BACKUP BUTTON */}
+                      <button
+                        type="button"
+                        onClick={handleCopyBackupText}
+                        className="w-full py-2.5 bg-[#090b11] hover:bg-slate-900 text-emerald-400 text-[10px] border border-emerald-950 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        <span>Copiar Texto do Backup (JSON)</span>
+                      </button>
+
+                      {showExportedTextSettings && (
+                        <div className="space-y-1.5 pt-1 text-left bg-[#05070a]/60 p-2.5 rounded-xl border border-slate-900 animate-fade-in">
+                          <label className="text-[9px] font-mono uppercase text-slate-400 block">Texto do Backup Criptografado</label>
+                          <textarea
+                            readOnly
+                            rows={3}
+                            value={exportedTextValue}
+                            onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                            placeholder="Seu texto de backup aparecerá aqui..."
+                            className="w-full bg-[#05070a] border border-slate-800 text-[9px] font-mono p-2 rounded-lg focus:outline-none focus:border-emerald-500/50 text-slate-400 select-all"
+                          />
+                          <p className="text-[8px] text-slate-500 italic leading-snug">Selecione todo o texto acima (Ctrl+A / Cmd+A) e copie caso precise salvar manualmente.</p>
+                        </div>
+                      )}
 
                       <div className="text-center pt-1">
                         <button
