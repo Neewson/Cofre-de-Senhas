@@ -64,6 +64,11 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
+// Capacitor Native API Imports
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+
 // Standardized Firestore error-reporting structure as mandated by security skills
 enum OperationType {
   CREATE = 'create',
@@ -189,6 +194,10 @@ export default function App() {
   // Backup Import/Export triggers
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pastedJsonSetup, setPastedJsonSetup] = useState<string>('');
+  const [showPastedImportSetup, setShowPastedImportSetup] = useState<boolean>(false);
+  const [pastedJsonSettings, setPastedJsonSettings] = useState<string>('');
+  const [showPastedImportSettings, setShowPastedImportSettings] = useState<boolean>(false);
 
   // Google Drive Cloud Backup states
   const [gdriveAccessToken, setGdriveAccessToken] = useState<string | null>(null);
@@ -829,7 +838,7 @@ export default function App() {
   /**
    * Export encrypted database backup file
    */
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     const rawData = localStorage.getItem('secure_records') || '[]';
     const configData = localStorage.getItem('secure_config') || '{}';
     
@@ -840,15 +849,42 @@ export default function App() {
       records: JSON.parse(rawData)
     };
 
-    const blob = new Blob([JSON.stringify(transferPayload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const fileName = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
+    const jsonString = JSON.stringify(transferPayload, null, 2);
+
+    if (Capacitor.isNativePlatform()) {
+      try {
+        // write the file in temporary cache directory of Android/iOS device
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: jsonString,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
+
+        // invoke native Android share sheet to let users save it where they want or share it
+        await Share.share({
+          title: 'Backup do Cofre de Senhas',
+          text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
+          url: result.uri,
+          dialogTitle: 'Salvar/Compartilhar Backup',
+        });
+      } catch (err: any) {
+        console.error('Error sharing backup in Capacitor:', err);
+        triggerAlert('Erro ao Exportar', `Não foi possível criar ou compartilhar o arquivo de backup: ${err.message || err}`);
+      }
+    } else {
+      // standard web downloads
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
   };
 
   /**
@@ -880,6 +916,35 @@ export default function App() {
       }
     };
     reader.readAsText(file);
+  };
+
+  /**
+   * Import backup database file securely from direct pasted JSON text
+   */
+  const handleImportPastedJSON = (jsonText: string) => {
+    setImportStatus(null);
+    if (!jsonText || !jsonText.trim()) {
+      setImportStatus({ success: false, message: 'O conteúdo de texto do backup JSON está vazio.' });
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(jsonText.trim());
+      if (payload.appIdentifier !== 'memo-seguro-criptografado-e2e') {
+        setImportStatus({ success: false, message: 'Texto inválido. Formato sem assinatura de segurança do app.' });
+        return;
+      }
+
+      // Overwrite locally and lock for safety
+      localStorage.setItem('secure_config', JSON.stringify(payload.config));
+      localStorage.setItem('secure_records', JSON.stringify(payload.records));
+      
+      setImportStatus({ success: true, message: 'Cofre importado com absoluto sucesso! Digite a senha mestra para desbloquear.' });
+      setIsSetup(true);
+      handleLockVault();
+    } catch (error) {
+      setImportStatus({ success: false, message: 'Falha durante o parse do texto JSON do cofre. Certifique-se de copiar o texto completo.' });
+    }
   };
 
   /**
@@ -1693,14 +1758,45 @@ export default function App() {
                     {/* Quick Restore link for setup screens */}
                     <div className="pt-4 border-t border-slate-900/60 text-center space-y-2">
                       <p className="text-[10px] text-slate-500 font-medium">Já possui um backup (.json)?</p>
-                      <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-4 py-2 bg-[#090b11] hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-300 rounded-xl cursor-pointer transition inline-flex items-center space-x-1.5"
-                        id="btn-import-restore-setup"
-                      >
-                        <Upload className="h-3 w-3 text-emerald-400" />
-                        <span>Restaurar Cofre Existente</span>
-                      </button>
+                      <div className="flex flex-col items-center gap-2">
+                        <button 
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-4 py-2 bg-[#090b11] hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-300 rounded-xl cursor-pointer transition inline-flex items-center space-x-1.5"
+                          id="btn-import-restore-setup"
+                        >
+                          <Upload className="h-3 w-3 text-emerald-400" />
+                          <span>Selecionar Arquivo .json</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setShowPastedImportSetup(!showPastedImportSetup)}
+                          className="text-[9px] text-slate-400 hover:text-slate-300 underline font-mono cursor-pointer"
+                        >
+                          {showPastedImportSetup ? '✕ Ocultar colar texto' : 'Ou importar colando texto do JSON'}
+                        </button>
+                      </div>
+
+                      {showPastedImportSetup && (
+                        <div className="mt-2 space-y-1.5 text-left bg-[#05070a]/60 p-2.5 rounded-xl border border-slate-900">
+                          <textarea
+                            rows={4}
+                            value={pastedJsonSetup}
+                            onChange={(e) => setPastedJsonSetup(e.target.value)}
+                            placeholder='Cole aqui todo o conteúdo de texto do seu arquivo .json de backup exportado...'
+                            className="w-full bg-[#05070a] border border-slate-800 text-[10px] font-mono p-2 rounded-lg focus:outline-none focus:border-emerald-500/50 text-slate-300 placeholder:text-slate-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleImportPastedJSON(pastedJsonSetup)}
+                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-[10px] rounded-lg cursor-pointer transition uppercase"
+                          >
+                            Validar e Restaurar por Texto
+                          </button>
+                        </div>
+                      )}
+
                       <input 
                         type="file" 
                         ref={fileInputRef} 
@@ -2570,6 +2666,35 @@ export default function App() {
                           <span>Importar JSON</span>
                         </button>
                       </div>
+
+                      <div className="text-center pt-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowPastedImportSettings(!showPastedImportSettings)}
+                          className="text-[9px] text-slate-400 hover:text-slate-300 underline font-mono cursor-pointer"
+                        >
+                          {showPastedImportSettings ? '✕ Ocultar colar texto' : 'Ou restaurar colando o texto do JSON'}
+                        </button>
+                      </div>
+
+                      {showPastedImportSettings && (
+                        <div className="space-y-1.5 pt-1.5 text-left bg-[#05070a]/60 p-2.5 rounded-xl border border-slate-900 animate-fade-in">
+                          <textarea
+                            rows={4}
+                            value={pastedJsonSettings}
+                            onChange={(e) => setPastedJsonSettings(e.target.value)}
+                            placeholder='Cole aqui todo o conteúdo de texto do seu arquivo .json de backup exportado...'
+                            className="w-full bg-[#05070a] border border-slate-800 text-[10px] font-mono p-2 rounded-lg focus:outline-none focus:border-emerald-500/50 text-slate-300 placeholder:text-slate-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleImportPastedJSON(pastedJsonSettings)}
+                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-[10px] rounded-lg cursor-pointer transition uppercase"
+                          >
+                            Validar e Restaurar por Texto
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* CARD 2: GOOGLE DRIVE CLOUD BACKUP */}
@@ -2656,12 +2781,19 @@ export default function App() {
                                 Salve e sincronize seus dados criptografados AES-256 com segurança de ponta-a-ponta na sua conta Google Drive pessoal.
                               </p>
 
+                              {Capacitor.isNativePlatform() && (
+                                <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] rounded-xl font-sans leading-relaxed mb-3">
+                                  ⚠️ <strong>Aviso do App Instalado (APK):</strong> O login do Google Drive necessita de popups do navegador e não é suportado no aplicativo móvel. Por favor, utilize o <strong>Firebase Cloud Sync (E-mail e Senha)</strong> logo abaixo, que é 100% suportado e sincroniza em tempo real!
+                                </div>
+                              )}
+
                               <button
                                 onClick={() => handleConnectGDrive()}
-                                className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
+                                disabled={Capacitor.isNativePlatform()}
+                                className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-40 disabled:hover:bg-emerald-500 disabled:cursor-not-allowed text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
                               >
                                 <Cloud className="h-3.5 w-3.5" />
-                                <span>Autenticar & Conectar</span>
+                                <span>{Capacitor.isNativePlatform() ? 'Indisponível no APK' : 'Autenticar & Conectar'}</span>
                               </button>
 
                               <div className="pt-1.5 border-t border-slate-900/60">
@@ -2836,41 +2968,49 @@ export default function App() {
                                 </button>
                               </form>
 
-                              <div className="relative my-3">
-                                <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                                  <div className="w-full border-t border-slate-900"></div>
-                                </div>
-                                <div className="relative flex justify-center text-xs uppercase font-mono">
-                                  <span className="bg-[#0b0e14] px-2 text-slate-500 font-semibold text-[9px]">ou use</span>
-                                </div>
-                              </div>
+                              {!Capacitor.isNativePlatform() ? (
+                                <>
+                                  <div className="relative my-3">
+                                    <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                                      <div className="w-full border-t border-slate-900"></div>
+                                    </div>
+                                    <div className="relative flex justify-center text-xs uppercase font-mono">
+                                      <span className="bg-[#0b0e14] px-2 text-slate-500 font-semibold text-[9px]">ou use</span>
+                                    </div>
+                                  </div>
 
-                              <button
-                                type="button"
-                                onClick={handleGoogleSignIn}
-                                disabled={fbIsLoading}
-                                className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
-                              >
-                                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
-                                  <path
-                                    fill="currentColor"
-                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                                  />
-                                  <path
-                                    fill="currentColor"
-                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                                  />
-                                  <path
-                                    fill="currentColor"
-                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
-                                  />
-                                  <path
-                                    fill="currentColor"
-                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
-                                  />
-                                </svg>
-                                <span>Entrar com o Google</span>
-                              </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleGoogleSignIn}
+                                    disabled={fbIsLoading}
+                                    className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+                                  >
+                                    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
+                                      <path
+                                        fill="currentColor"
+                                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                      />
+                                      <path
+                                        fill="currentColor"
+                                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                      />
+                                      <path
+                                        fill="currentColor"
+                                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
+                                      />
+                                      <path
+                                        fill="currentColor"
+                                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
+                                      />
+                                    </svg>
+                                    <span>Entrar com o Google</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <div className="p-2.5 bg-emerald-950/15 border border-emerald-900/20 text-emerald-400 text-[10px] rounded-lg text-center leading-relaxed font-mono">
+                                  ✓ Sincronização em nuvem via E-mail &amp; Senha 100% ativa e segura no app!
+                                </div>
+                              )}
 
                               <div className="text-center pt-2.5 border-t border-slate-900 flex items-center justify-center space-x-2 text-[9.5px] text-slate-400">
                                 <span>{fbMode === 'login' ? 'Não possui conta?' : 'Já possui conta?'}</span>
