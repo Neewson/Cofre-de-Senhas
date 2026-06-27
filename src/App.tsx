@@ -27,6 +27,7 @@ import {
   EyeOff, 
   LogOut, 
   Database,
+  FileJson,
   Smartphone,
   Sparkles,
   SearchIcon,
@@ -220,6 +221,14 @@ export default function App() {
   const [fbMode, setFbMode] = useState<'login' | 'register'>('login');
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [showSetupWarning, setShowSetupWarning] = useState<boolean>(false);
+
+  // Change Master Password form states
+  const [currentMasterPassword, setCurrentMasterPassword] = useState<string>('');
+  const [newMasterPassword, setNewMasterPassword] = useState<string>('');
+  const [confirmNewMasterPassword, setConfirmNewMasterPassword] = useState<string>('');
+  const [changePasswordError, setChangePasswordError] = useState<string>('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState<string>('');
+  const [isChangingPassword, setIsChangingPassword] = useState<boolean>(false);
 
   // Advanced Security & Clipboard auto-clear states
   const [autoLockTimeout, setAutoLockTimeout] = useState<string>(
@@ -670,17 +679,11 @@ export default function App() {
     setAddRecordSuccess(false);
 
     if (!newQuestion.trim() || !newAnswer.trim()) {
-      triggerAlert('Campos Vazios', 'Por favor, digite tanto a pergunta/frase quanto a resposta protegida.');
+      triggerAlert('Campos Vazios', 'Por favor, preencha tanto o registro quanto a senha protegida.');
       return;
     }
 
-    // Always make sure question has a question mark if user asks for typical lookups, 
-    // but keep exactly what the user wrote. We can append '?' automatically if not present 
-    // to match typical Q&A format, or let the user choose.
     let finalQuestion = newQuestion.trim();
-    if (!finalQuestion.endsWith('?')) {
-      finalQuestion = finalQuestion + '?'; // Ensure Question ends with ? to resemble request context
-    }
 
     try {
       const encryptedQuestion = await encryptText(finalQuestion, masterPassword);
@@ -1257,6 +1260,96 @@ export default function App() {
     );
   };
 
+  const handleChangeMasterPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangePasswordError('');
+    setChangePasswordSuccess('');
+
+    if (!currentMasterPassword || !newMasterPassword || !confirmNewMasterPassword) {
+      setChangePasswordError('Por favor, preencha todos os campos para alterar a senha.');
+      return;
+    }
+
+    if (newMasterPassword.length < 6) {
+      setChangePasswordError('A nova senha mestra deve conter pelo menos 6 caracteres.');
+      return;
+    }
+
+    if (newMasterPassword !== confirmNewMasterPassword) {
+      setChangePasswordError('A nova senha e a confirmação não coincidem.');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      // 1. Verify current master password
+      const savedConfigStr = localStorage.getItem('secure_config');
+      if (!savedConfigStr) {
+        setChangePasswordError('Configuração do cofre não encontrada localmente.');
+        setIsChangingPassword(false);
+        return;
+      }
+      const secureConfig = JSON.parse(savedConfigStr) as SecureConfig;
+      const isValid = await verifyPassword(secureConfig.verificationPayload, currentMasterPassword);
+      if (!isValid || currentMasterPassword !== masterPassword) {
+        setChangePasswordError('A senha mestra atual inserida está incorreta.');
+        setIsChangingPassword(false);
+        return;
+      }
+
+      // 2. Generate new verification payload
+      const newVerificationPayload = await generateVerificationPayload(newMasterPassword);
+      const newSecureConfig: SecureConfig = { verificationPayload: newVerificationPayload };
+
+      // 3. Re-encrypt all records currently in memory
+      const newSecureRecords: SecureRecord[] = [];
+      for (const rec of decryptedRecords) {
+        const encryptedQuestion = await encryptText(rec.question, newMasterPassword);
+        const encryptedAnswer = await encryptText(rec.answer, newMasterPassword);
+        newSecureRecords.push({
+          id: rec.id,
+          encryptedQuestion,
+          encryptedAnswer,
+          requireMasterPasswordToReveal: rec.requireMasterPasswordToReveal,
+          createdAt: rec.createdAt
+        });
+      }
+
+      // 4. Save to localStorage
+      localStorage.setItem('secure_config', JSON.stringify(newSecureConfig));
+      localStorage.setItem('secure_records', JSON.stringify(newSecureRecords));
+
+      // 5. Update masterPassword state
+      setMasterPassword(newMasterPassword);
+
+      // Reset fields
+      setCurrentMasterPassword('');
+      setNewMasterPassword('');
+      setConfirmNewMasterPassword('');
+
+      // 6. If logged in with Firebase, automatically upload the new encrypted cofre to the cloud!
+      if (fbUser) {
+        const docRef = doc(db, 'vaults', fbUser.uid);
+        await setDoc(docRef, {
+          config: newSecureConfig,
+          records: newSecureRecords,
+          updatedAt: new Date().toISOString()
+        });
+        const nowStr = new Date().toLocaleString('pt-BR');
+        setFbLastSync(nowStr);
+        localStorage.setItem('secure_fb_last_sync', nowStr);
+        setChangePasswordSuccess('Sua senha mestra foi alterada com sucesso e sincronizada com a nuvem do Firebase!');
+      } else {
+        setChangePasswordSuccess('Sua senha mestra foi alterada com sucesso localmente!');
+      }
+    } catch (error: any) {
+      console.error(error);
+      setChangePasswordError(`Erro ao alterar senha mestra: ${error.message || error}`);
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   const handleFbLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fbEmail.trim() || !fbPassword) {
@@ -1764,7 +1857,7 @@ export default function App() {
                               </span>
                               <input 
                                 type="text"
-                                placeholder="Insira a Pergunta ou Palavra-Chave..."
+                                placeholder="Insira o Registro ou Palavra-Chave..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="w-full bg-[#090b11] border border-slate-800/80 hover:border-slate-700/80 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 focus:outline-none rounded-xl pl-9.5 pr-4 py-3 text-xs text-emerald-300 font-medium placeholder:text-slate-500 transition-all duration-200"
@@ -1788,7 +1881,7 @@ export default function App() {
                               <div className="p-8 text-center text-slate-600 bg-[#090b11]/20 border border-slate-900 border-dashed rounded-2xl space-y-2 select-none">
                                 <Search className="h-10 w-10 mx-auto opacity-20 text-emerald-400" />
                                 <div className="text-xs font-semibold">Aguardando busca automatizada...</div>
-                                <div className="text-[10px] text-slate-600 leading-normal">Ao digitar algo correspondente a um Registro, a resposta correspondente será revelada imediatamente na tela!</div>
+                                <div className="text-[10px] text-slate-600 leading-normal">Ao digitar algo correspondente a um Registro, a senha correspondente será revelada imediatamente na tela!</div>
                               </div>
                             ) : (
                               <div className="space-y-3">
@@ -1803,7 +1896,7 @@ export default function App() {
                                       <span className="text-[9px] text-slate-500 font-mono">100% de Coincidência</span>
                                     </div>
                                     
-                                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Pergunta encontrada:</div>
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Registro encontrado:</div>
                                     <div className="text-sm font-semibold text-emerald-300 leading-snug whitespace-pre-wrap">{exactMatchedRecord.question}</div>
                                     
                                     <div className="border-t border-slate-900/60 pt-2 pb-1">
@@ -1831,7 +1924,7 @@ export default function App() {
                                         // Plainly visible unlocked answer
                                         <div className="space-y-1.5" id="exact-match-answer-block">
                                           <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                                            <span>Resposta Criptografada:</span>
+                                            <span>Senha Criptografada:</span>
                                             <button
                                               type="button"
                                               onClick={() => handleCopyToClipboard(exactMatchedRecord.answer, exactMatchedRecord.id)}
@@ -1901,7 +1994,7 @@ export default function App() {
                                   <div className="p-6 bg-[#090b11]/20 border border-slate-900 border-dashed rounded-2xl text-center py-6">
                                     <HelpCircle className="h-6 w-6 text-slate-700 mx-auto mb-1.5" />
                                     <p className="text-xs text-slate-400 font-semibold">Nenhum registro correspondente no momento...</p>
-                                    <p className="text-[10px] text-slate-500 max-w-[280px] mx-auto mt-1 leading-normal">Gostaria de criar um novo registro para responder a essa pergunta?</p>
+                                    <p className="text-[10px] text-slate-500 max-w-[280px] mx-auto mt-1 leading-normal">Gostaria de criar um novo registro para salvar essa senha?</p>
                                     <button
                                       onClick={() => {
                                         setNewQuestion(searchTerm);
@@ -1909,7 +2002,7 @@ export default function App() {
                                       }}
                                       className="mt-2.5 text-[10px] font-bold text-emerald-400 hover:underline uppercase tracking-wider font-mono"
                                     >
-                                      Criar registro com "{searchTerm}" &rarr;
+                                      Criar registro para "{searchTerm}" &rarr;
                                     </button>
                                   </div>
                                 )}
@@ -1929,9 +2022,9 @@ export default function App() {
 
                           <form onSubmit={handleAddRecord} className="space-y-4">
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">PERGUNTA (Sem ponto)</label>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">REGISTRO</label>
                               <textarea 
-                                placeholder="..."
+                                placeholder="Digite o nome do registro (site, serviço, conta, etc.)..."
                                 value={newQuestion}
                                 onChange={(e) => setNewQuestion(e.target.value)}
                                 rows={3}
@@ -1941,9 +2034,9 @@ export default function App() {
                             </div>
 
                             <div className="space-y-1">
-                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">RESPOSTA</label>
+                              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">SENHA</label>
                               <textarea
-                                placeholder="..."
+                                placeholder="Digite a senha protegida ou conteúdo secreto..."
                                 value={newAnswer}
                                 onChange={(e) => setNewAnswer(e.target.value)}
                                 rows={3}
@@ -2080,7 +2173,7 @@ export default function App() {
                                       }}
                                       className="w-full py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 rounded-lg text-[10px] font-sans font-bold uppercase cursor-pointer transition select-none flex items-center justify-center space-x-1"
                                     >
-                                      <span>✓ Usar como Resposta</span>
+                                      <span>✓ Usar como Senha</span>
                                     </button>
                                   )}
                                 </motion.div>
@@ -2137,7 +2230,7 @@ export default function App() {
                             <div className="p-12 text-center text-slate-600 bg-[#090b11]/20 border border-slate-900 border-dashed rounded-2xl space-y-2 select-none">
                               <Database className="h-10 w-10 mx-auto opacity-15 text-emerald-400" />
                               <p className="text-xs font-semibold">Não existem registros salvos neste cofre.</p>
-                              <p className="text-[10px] text-slate-600 max-w-[240px] mx-auto leading-normal">Selecione "+ Novo" acima para preencher suas perguntas e respostas e testar a criptografia!</p>
+                              <p className="text-[10px] text-slate-600 max-w-[240px] mx-auto leading-normal">Selecione "+ Novo" acima para cadastrar seus registros e senhas e testar a criptografia!</p>
                             </div>
                           ) : (
                             <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1" id="records-overflow">
@@ -2171,7 +2264,7 @@ export default function App() {
                                             <button
                                               onClick={() => handleCopyToClipboard(item.answer, item.id)}
                                               className="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 font-mono uppercase tracking-wider flex items-center space-x-1 cursor-pointer"
-                                              title="Copiar Resposta"
+                                              title="Copiar Senha"
                                               id={`copy-cofre-${item.id}`}
                                             >
                                               {copiedNotification?.id === item.id ? (
@@ -2248,232 +2341,98 @@ export default function App() {
                         </div>
                       )}
 
-                      {/* TAB 4: PERFIL, AUTENTICAÇÃO & ASSINATURA STRIPE */}
+                      {/* TAB 4: ALTERAR SENHA MESTRA */}
                       {activeTab === 'profile' && (
-                        <div className="space-y-4 text-left animate-fade-in" id="tab-profile">
+                        <div className="space-y-4 text-left animate-fade-in pb-12" id="tab-profile">
                           <div className="flex justify-between items-center bg-[#090b11]/40 p-3 rounded-xl border border-slate-900/40">
                             <div>
-                              <h3 className="text-xs font-sans font-bold tracking-wider text-emerald-400 uppercase">Perfil & Conta</h3>
-                              <p className="text-[9px] text-slate-400 font-semibold leading-tight font-sans">Configuração de sincronização e assinatura</p>
+                              <h3 className="text-xs font-sans font-bold tracking-wider text-emerald-400 uppercase">Segurança</h3>
+                              <p className="text-[9px] text-slate-400 font-semibold leading-tight font-sans">Alteração da Senha Mestra</p>
                             </div>
                             <span className="text-[8px] px-2 py-0.5 bg-[#090b11] border border-slate-800/80 text-emerald-400 rounded-full font-mono font-bold">
-                              {fbUser ? 'CONECTADO' : 'LOCAL'}
+                              LOCAL
                             </span>
                           </div>
 
-                          {/* Profile Security status card */}
-                          <div className="space-y-3 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left animate-fade-in shadow-md">
+                          {/* Change Master Password form */}
+                          <div className="space-y-3.5 p-3.5 bg-[#090b11]/80 border border-slate-900 rounded-xl text-left shadow-md">
                             <h4 className="text-xs font-bold text-white font-sans flex items-center gap-1.5 uppercase tracking-wider text-emerald-400">
-                              <ShieldCheck className="h-4 w-4 text-emerald-400" />
-                              <span>Armazenamento Zero-Knowledge (E2E)</span>
+                              <KeyRound className="h-4 w-4 text-emerald-400" />
+                              <span>Alterar Senha Mestra</span>
                             </h4>
                             <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                              Seu cofre de senhas é criptografado localmente no seu próprio dispositivo usando criptografia de nível militar (AES-256) antes de ser enviado. A sua senha mestra nunca é transmitida ou salva nos servidores, garantindo total privacidade e controle absoluto dos seus dados.
+                              Ao alterar sua Senha Mestra, todos os seus registros armazenados localmente serão descriptografados com a senha atual e criptografados novamente com a nova senha.
                             </p>
-                            {fbUser && (
-                              <div className="bg-[#05070a] border border-slate-900 p-2.5 rounded-lg space-y-1.5 font-sans mt-2">
-                                <div className="text-[9px] uppercase font-mono font-bold text-emerald-400 flex items-center gap-1">
-                                  <Cloud className="h-3 w-3" />
-                                  <span>Status do Sincronismo Sincronizado</span>
-                                </div>
-                                <div className="text-[10px] text-slate-300">
-                                  Sua conta está conectada e ativada para realizar backups e restaurações em nuvem ilimitadas e seguras pelo Firebase.
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
 
-                      {/* DEPRECATED_OLD_PROFILE_CONTENT_START */}
-                      {false && activeTab === 'profile' && (
-                        <div className="space-y-4 text-left animate-fade-in" id="tab-profile">
-                          <div className="flex justify-between items-center bg-[#090b11]/40 p-3 rounded-xl border border-slate-900/40">
-                            <div>
-                              <h3 className="text-xs font-sans font-bold tracking-wider text-emerald-400 uppercase">Perfil & Conta</h3>
-                              <p className="text-[9px] text-slate-400 font-semibold leading-tight">Configuração de sincronização e assinatura</p>
-                            </div>
-                            <span className="text-[8px] px-2 py-0.5 bg-[#090b11] border border-slate-800/80 text-emerald-400 rounded-full font-mono font-bold">
-                              {fbUser ? 'CONECTADO' : 'MANUAL'}
-                            </span>
-                          </div>
-
-                          {/* Se NÃO estiver logado no Firebase */}
-                          {!fbUser ? (
-                            <div className="space-y-4 bg-[#090b11]/80 border border-slate-900 p-4 rounded-2xl animate-fade-in">
-                              <div className="text-center space-y-1">
-                                <div className="h-10 w-10 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full flex items-center justify-center mx-auto shadow-md">
-                                  <User className="h-5 w-5 animate-pulse" />
-                                </div>
-                                <h4 className="text-xs font-bold text-white mt-2 font-display">Conecte sua Conta</h4>
-                                <p className="text-[10px] text-slate-400 max-w-[280px] mx-auto leading-normal">
-                                  Faça login ou crie uma conta para sincronizar e salvar seu cofre de forma segura na nuvem do Firebase e obter pacotes Premium.
-                                </p>
+                            <form onSubmit={handleChangeMasterPassword} className="space-y-3 pt-1">
+                              <div>
+                                <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                  Senha Mestra Atual
+                                </label>
+                                <input
+                                  type="password"
+                                  required
+                                  value={currentMasterPassword}
+                                  onChange={(e) => setCurrentMasterPassword(e.target.value)}
+                                  placeholder="Digite sua senha mestra atual"
+                                  className="w-full bg-[#05070a] border border-slate-900 text-slate-200 text-[11px] p-2.5 rounded-lg focus:outline-none focus:border-emerald-500/40"
+                                />
                               </div>
 
-                              {/* Form Tabs */}
-                              <div className="grid grid-cols-2 gap-1 bg-[#05070a] p-1 rounded-lg border border-slate-900">
-                                <button
-                                  type="button"
-                                  onClick={() => setFbMode('login')}
-                                  className={`py-1.5 text-[10px] font-bold uppercase rounded-md tracking-wider transition cursor-pointer ${fbMode === 'login' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10' : 'text-slate-500 hover:text-slate-400'}`}
-                                >
-                                  Login
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setFbMode('register')}
-                                  className={`py-1.5 text-[10px] font-bold uppercase rounded-md tracking-wider transition cursor-pointer ${fbMode === 'register' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/10' : 'text-slate-500 hover:text-slate-400'}`}
-                                >
-                                  Criar Conta
-                                </button>
+                              <div>
+                                <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                  Nova Senha Mestra
+                                </label>
+                                <input
+                                  type="password"
+                                  required
+                                  value={newMasterPassword}
+                                  onChange={(e) => setNewMasterPassword(e.target.value)}
+                                  placeholder="Digite a nova senha mestra (mín. 6 caracteres)"
+                                  className="w-full bg-[#05070a] border border-slate-900 text-slate-200 text-[11px] p-2.5 rounded-lg focus:outline-none focus:border-emerald-500/40"
+                                />
                               </div>
 
-                              <form onSubmit={fbMode === 'login' ? handleFbLogin : handleFbRegister} className="space-y-3.5">
-                                <div className="space-y-2.5">
-                                  <div>
-                                    <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                                      E-mail
-                                    </label>
-                                    <input
-                                      type="email"
-                                      required
-                                      value={fbEmail}
-                                      onChange={(e) => setFbEmail(e.target.value)}
-                                      placeholder="Ex: seuemail@dominio.com"
-                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-200 text-[11px] p-2.5 rounded-lg focus:outline-none focus:border-emerald-500/40 font-sans"
-                                    />
-                                  </div>
-
-                                  <div>
-                                    <div className="flex justify-between items-center mb-1 font-sans">
-                                      <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400">
-                                        Senha do Firebase Sync
-                                      </label>
-                                      <span className="text-slate-500 text-[8px] lowercase">(mínimo 6 dígitos)</span>
-                                    </div>
-                                    <input
-                                      type="password"
-                                      required
-                                      value={fbPassword}
-                                      onChange={(e) => setFbPassword(e.target.value)}
-                                      placeholder="Ao menos 6 caracteres"
-                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-200 text-[11px] p-2.5 rounded-lg focus:outline-none focus:border-emerald-500/40"
-                                    />
-                                  </div>
-                                </div>
-
-                                <button
-                                  type="submit"
-                                  disabled={fbIsLoading}
-                                  className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
-                                >
-                                  {fbIsLoading ? (
-                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                                  ) : (
-                                    <Cloud className="h-3.5 w-3.5" />
-                                  )}
-                                  <span>{fbMode === 'login' ? 'Entrar & Sincronizar' : 'Criar Conta & Sincronizar'}</span>
-                                </button>
-                              </form>
-
-                              <div className="relative my-2.5">
-                                <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                                  <div className="w-full border-t border-slate-900"></div>
-                                </div>
-                                <div className="relative flex justify-center text-xs uppercase font-mono">
-                                  <span className="bg-[#0b0e14] px-1.5 text-slate-500 font-semibold text-[8px]">ou use</span>
-                                </div>
+                              <div>
+                                <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                  Confirmar Nova Senha Mestra
+                                </label>
+                                <input
+                                  type="password"
+                                  required
+                                  value={confirmNewMasterPassword}
+                                  onChange={(e) => setConfirmNewMasterPassword(e.target.value)}
+                                  placeholder="Repita a nova senha mestra"
+                                  className="w-full bg-[#05070a] border border-slate-900 text-slate-200 text-[11px] p-2.5 rounded-lg focus:outline-none focus:border-emerald-500/40"
+                                />
                               </div>
+
+                              {changePasswordError && (
+                                <div className="p-2.5 bg-red-950/20 border border-red-500/30 text-red-400 text-[10px] rounded-lg text-center font-sans">
+                                  {changePasswordError}
+                                </div>
+                              )}
+
+                              {changePasswordSuccess && (
+                                <div className="p-2.5 bg-emerald-950/20 border border-emerald-500/30 text-emerald-400 text-[10px] rounded-lg text-center font-sans">
+                                  {changePasswordSuccess}
+                                </div>
+                              )}
 
                               <button
-                                type="button"
-                                onClick={handleGoogleSignIn}
-                                disabled={fbIsLoading}
-                                className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+                                type="submit"
+                                disabled={isChangingPassword}
+                                className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-50 text-slate-950 text-[10px] font-mono font-bold uppercase tracking-wider rounded-lg transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
                               >
-                                <svg className="h-3.5 w-3.5 text-slate-300" viewBox="0 0 24 24">
-                                  <path
-                                    fill="currentColor"
-                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                                  />
-                                  <path
-                                    fill="currentColor"
-                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                                  />
-                                  <path
-                                    fill="currentColor"
-                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
-                                  />
-                                  <path
-                                    fill="currentColor"
-                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
-                                  />
-                                </svg>
-                                <span>Entrar com o Google</span>
-                              </button>
-                            </div>
-                          ) : (
-                            // Se ESTIVER logado no Firebase Auth
-                            <div className="space-y-4 animate-fade-in pb-12">
-                              
-                              {/* Avatar Profile Card */}
-                              <div className="bg-[#090b11]/80 border border-slate-900 p-4 rounded-2xl flex items-center space-x-3.5">
-                                <div className="h-11 w-11 bg-gradient-to-tr from-emerald-500 to-teal-600 rounded-full flex items-center justify-center text-slate-950 text-xs font-black border-2 border-emerald-400/20 shadow-lg select-all">
-                                  {fbUser.email ? fbUser.email.slice(0, 2).toUpperCase() : 'US'}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider font-mono">Conta Autenticada</div>
-                                  <div className="text-xs font-bold text-white truncate font-sans">{fbUser.email}</div>
-                                  <div className="text-[8px] text-slate-500 font-mono mt-0.5 select-all">ID: {fbUser.uid.slice(0, 12)}...</div>
-                                </div>
-                                
-                                <button
-                                  onClick={handleFbLogout}
-                                  className="text-[8.5px] px-2 py-1.5 bg-red-950/20 hover:bg-red-900/10 text-red-400 hover:text-red-300 border border-red-500/25 rounded-lg font-bold font-mono tracking-wider transition uppercase cursor-pointer"
-                                >
-                                  Sair
-                                </button>
-                              </div>
-
-                              {/* Firestore Sincronização Panel */}
-                              <div className="bg-[#090b11]/80 border border-slate-900 p-3.5 rounded-2xl space-y-2.5">
-                                <div className="flex items-center space-x-1.5 uppercase font-bold text-slate-400 text-[10px] tracking-wider font-sans border-b border-slate-950 pb-2">
-                                  <Cloud className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-                                  <span>Sincronismo Cloud (Firebase Docs)</span>
-                                </div>
-
-                                <p className="text-[10px] text-slate-400 leading-normal">
-                                  Suas credenciais são encriptadas de ponta-a-ponta (E2E) com base na sua Senha Mestra antes do envio para o banco de dados.
-                                </p>
-
-                                {fbLastSync && (
-                                  <div className="text-[9px] text-slate-500 font-mono">
-                                    Último Envio/Baixa: <strong className="text-slate-400">{fbLastSync}</strong>
-                                  </div>
+                                {isChangingPassword ? (
+                                  <RefreshCw className="h-3 w-3 animate-spin text-slate-950" />
+                                ) : (
+                                  <KeyRound className="h-3 w-3 text-slate-950" />
                                 )}
-
-                                <div className="grid grid-cols-2 gap-2 pt-1">
-                                  <button
-                                    onClick={handleFbBackup}
-                                    disabled={fbIsLoading}
-                                    className="py-2 bg-emerald-600/10 hover:bg-emerald-600/20 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
-                                  >
-                                    <RefreshCw className={`h-3 w-3 ${fbIsLoading ? 'animate-spin' : ''}`} />
-                                    <span>Salvar Nuvem</span>
-                                  </button>
-                                  <button
-                                    onClick={handleFbRestore}
-                                    disabled={fbIsLoading}
-                                    className="py-2 bg-blue-600/10 hover:bg-blue-600/20 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
-                                  >
-                                    <Download className="h-3 w-3" />
-                                    <span>Baixar Nuvem</span>
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
+                                <span>Atualizar Senha Mestra</span>
+                              </button>
+                            </form>
+                          </div>
                         </div>
                       )}
 
@@ -3020,7 +2979,7 @@ export default function App() {
                           <div className="space-y-1.5">
                             <h3 className="text-xs font-display font-extrabold text-white leading-none tracking-tight">Cofre de Senhas</h3>
                             <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
-                              Armazene registros de perguntas e respostas com segurança inviolável de ponta-a-ponta. Seus dados são salvos localmente e codificados com cifra militar direto no navegador do computador ou do smartphone.
+                              Armazene registros e senhas com segurança inviolável de ponta-a-ponta. Seus dados são salvos localmente e codificados com cifra militar direto no navegador do computador ou do smartphone.
                             </p>
                           </div>
 
