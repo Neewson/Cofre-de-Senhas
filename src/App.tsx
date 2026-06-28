@@ -880,25 +880,102 @@ export default function App() {
 
     // 1. First preference: Capacitor Native Platform (Android APK / iOS)
     if (Capacitor.isNativePlatform()) {
+      let savedPath = '';
+      let fileUri = '';
+      let isSavedToDocuments = false;
+
+      // Try writing to Documents folder first (accessible by user on mobile)
       try {
         const result = await Filesystem.writeFile({
           path: fileName,
           data: jsonString,
-          directory: Directory.Cache,
+          directory: Directory.Documents,
           encoding: Encoding.UTF8,
         });
+        fileUri = result.uri;
+        savedPath = `Documents/${fileName}`;
+        isSavedToDocuments = true;
+      } catch (docErr: any) {
+        console.warn('Could not write directly to Documents directory, falling back to Cache:', docErr);
+        // Fallback to Cache directory (always writable, sandboxed)
+        try {
+          const result = await Filesystem.writeFile({
+            path: fileName,
+            data: jsonString,
+            directory: Directory.Cache,
+            encoding: Encoding.UTF8,
+          });
+          fileUri = result.uri;
+          savedPath = `Cache/${fileName}`;
+        } catch (cacheErr: any) {
+          console.error('Failed to write to both Documents and Cache:', cacheErr);
+          triggerAlert(
+            'Erro ao Exportar',
+            `Não foi possível criar o arquivo de backup no dispositivo: ${cacheErr.message || cacheErr}`
+          );
+          return;
+        }
+      }
 
-        // Use 'files' array in Share.share which is fully supported and recommended for files on Android/iOS!
+      // Now open the Native Share sheet so they can choose where to save/send it
+      try {
         await Share.share({
           title: 'Backup do Cofre de Senhas',
           text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
-          files: [result.uri],
-          dialogTitle: 'Salvar/Compartilhar Backup',
+          files: [fileUri],
+          dialogTitle: 'Escolha onde salvar ou compartilhar seu backup',
         });
-        return; // Successfully shared natively!
-      } catch (nativeErr: any) {
-        console.warn('Capacitor native sharing failed, falling back:', nativeErr);
+        
+        if (isSavedToDocuments) {
+          triggerAlert(
+            'Backup Exportado com Sucesso!',
+            `Seu arquivo de backup foi salvo com sucesso na sua pasta de Documentos local (${fileName}).\n\n` +
+            'Também abrimos a janela de compartilhamento nativa para que você possa salvá-lo em outros locais (como Google Drive, WhatsApp ou outros gerenciadores).'
+          );
+        } else {
+          triggerAlert(
+            'Backup Exportado!',
+            'A janela de compartilhamento nativa foi aberta. Para escolher onde salvar o arquivo, escolha "Copiar para...", "Salvar nos Arquivos", ou envie para si mesmo!'
+          );
+        }
+      } catch (shareErr: any) {
+        console.error('Native sharing failed:', shareErr);
+        if (isSavedToDocuments) {
+          triggerAlert(
+            'Backup Salvo Localmente!',
+            `Seu arquivo de backup foi gravado com sucesso diretamente na pasta de documentos do seu celular (Documents/${fileName}).\n\n` +
+            'Você pode encontrá-lo usando o aplicativo "Meus Arquivos" ou "Arquivos" do seu celular.'
+          );
+        } else {
+          // If both failed, copy to clipboard as robust fallback
+          let clipboardCopied = false;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(jsonString);
+              clipboardCopied = true;
+            } else {
+              clipboardCopied = copyToClipboardFallback(jsonString);
+            }
+          } catch (clipErr) {
+            console.warn('Auto-copy backup to clipboard failed inside native share fallback:', clipErr);
+          }
+
+          if (clipboardCopied) {
+            triggerAlert(
+              'Texto de Backup Copiado!',
+              'O dispositivo bloqueou a exportação do arquivo físico. ' +
+              'Mas não se preocupe: o texto completo do backup criptografado foi copiado para a Área de Transferência!\n\n' +
+              'Basta colar (Pressionar e Colar / Ctrl+V) em qualquer aplicativo de notas, e-mail ou mensagens para guardá-lo com segurança.'
+            );
+          } else {
+            triggerAlert(
+              'Erro ao Exportar',
+              `Não foi possível exportar ou compartilhar o backup: ${shareErr.message || shareErr}`
+            );
+          }
+        }
       }
+      return; // IMPORTANT: Avoid falling through to web-only or standard link downloads inside native platforms
     }
 
     // 2. Second preference: Modern Web File System Access API (showSaveFilePicker)
@@ -929,7 +1006,7 @@ export default function App() {
       }
     }
 
-    // 3. Third preference: Web Share API (extremely robust on modern browsers and hybrid mobile WebViews)
+    // 3. Third preference: Web Share API (extremely robust on modern mobile browsers)
     if (navigator.share) {
       try {
         const file = new File([jsonString], fileName, { type: 'application/json' });
