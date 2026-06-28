@@ -23,6 +23,7 @@ import {
   RefreshCw, 
   Download, 
   Upload, 
+  Mail, 
   Eye, 
   EyeOff, 
   LogOut, 
@@ -862,177 +863,34 @@ export default function App() {
   };
 
   /**
-   * Export encrypted database backup file (Works on Web and Android APK via Capacitor Filesystem & Share)
+   * Export encrypted database backup locally as plain text (Copies to Clipboard & Downloads .txt file)
    */
-  const handleExportBackup = async () => {
-    const rawData = localStorage.getItem('secure_records') || '[]';
-    const configData = localStorage.getItem('secure_config') || '{}';
-    
+  const handleExportTextLocal = async () => {
+    let config = {};
+    let records = [];
+    try {
+      const rawRecords = localStorage.getItem('secure_records');
+      if (rawRecords) records = JSON.parse(rawRecords);
+    } catch (e) {
+      console.warn("Error parsing secure_records from localStorage", e);
+    }
+    try {
+      const rawConfig = localStorage.getItem('secure_config');
+      if (rawConfig) config = JSON.parse(rawConfig);
+    } catch (e) {
+      console.warn("Error parsing secure_config from localStorage", e);
+    }
+
     const transferPayload = {
       appIdentifier: 'memo-seguro-criptografado-e2e',
       exportedAt: new Date().toISOString(),
-      config: JSON.parse(configData),
-      records: JSON.parse(rawData)
+      config,
+      records
     };
 
-    const fileName = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
+    const fileName = `Cofre_Backup_Texto_${new Date().toISOString().slice(0, 10)}.txt`;
     const jsonString = JSON.stringify(transferPayload, null, 2);
 
-    // 1. First preference: Capacitor Native Platform (Android APK / iOS)
-    if (Capacitor.isNativePlatform()) {
-      let savedPath = '';
-      let fileUri = '';
-      let isSavedToDocuments = false;
-
-      // Try writing to Documents folder first (accessible by user on mobile)
-      try {
-        const result = await Filesystem.writeFile({
-          path: fileName,
-          data: jsonString,
-          directory: Directory.Documents,
-          encoding: Encoding.UTF8,
-        });
-        fileUri = result.uri;
-        savedPath = `Documents/${fileName}`;
-        isSavedToDocuments = true;
-      } catch (docErr: any) {
-        console.warn('Could not write directly to Documents directory, falling back to Cache:', docErr);
-        // Fallback to Cache directory (always writable, sandboxed)
-        try {
-          const result = await Filesystem.writeFile({
-            path: fileName,
-            data: jsonString,
-            directory: Directory.Cache,
-            encoding: Encoding.UTF8,
-          });
-          fileUri = result.uri;
-          savedPath = `Cache/${fileName}`;
-        } catch (cacheErr: any) {
-          console.error('Failed to write to both Documents and Cache:', cacheErr);
-          triggerAlert(
-            'Erro ao Exportar',
-            `Não foi possível criar o arquivo de backup no dispositivo: ${cacheErr.message || cacheErr}`
-          );
-          return;
-        }
-      }
-
-      // Now open the Native Share sheet so they can choose where to save/send it
-      try {
-        await Share.share({
-          title: 'Backup do Cofre de Senhas',
-          text: 'Aqui está o seu arquivo de backup (.json) criptografado do cofre de senhas.',
-          files: [fileUri],
-          dialogTitle: 'Escolha onde salvar ou compartilhar seu backup',
-        });
-        
-        if (isSavedToDocuments) {
-          triggerAlert(
-            'Backup Exportado com Sucesso!',
-            `Seu arquivo de backup foi salvo com sucesso na sua pasta de Documentos local (${fileName}).\n\n` +
-            'Também abrimos a janela de compartilhamento nativa para que você possa salvá-lo em outros locais (como Google Drive, WhatsApp ou outros gerenciadores).'
-          );
-        } else {
-          triggerAlert(
-            'Backup Exportado!',
-            'A janela de compartilhamento nativa foi aberta. Para escolher onde salvar o arquivo, escolha "Copiar para...", "Salvar nos Arquivos", ou envie para si mesmo!'
-          );
-        }
-      } catch (shareErr: any) {
-        console.error('Native sharing failed:', shareErr);
-        if (isSavedToDocuments) {
-          triggerAlert(
-            'Backup Salvo Localmente!',
-            `Seu arquivo de backup foi gravado com sucesso diretamente na pasta de documentos do seu celular (Documents/${fileName}).\n\n` +
-            'Você pode encontrá-lo usando o aplicativo "Meus Arquivos" ou "Arquivos" do seu celular.'
-          );
-        } else {
-          // If both failed, copy to clipboard as robust fallback
-          let clipboardCopied = false;
-          try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              await navigator.clipboard.writeText(jsonString);
-              clipboardCopied = true;
-            } else {
-              clipboardCopied = copyToClipboardFallback(jsonString);
-            }
-          } catch (clipErr) {
-            console.warn('Auto-copy backup to clipboard failed inside native share fallback:', clipErr);
-          }
-
-          if (clipboardCopied) {
-            triggerAlert(
-              'Texto de Backup Copiado!',
-              'O dispositivo bloqueou a exportação do arquivo físico. ' +
-              'Mas não se preocupe: o texto completo do backup criptografado foi copiado para a Área de Transferência!\n\n' +
-              'Basta colar (Pressionar e Colar / Ctrl+V) em qualquer aplicativo de notas, e-mail ou mensagens para guardá-lo com segurança.'
-            );
-          } else {
-            triggerAlert(
-              'Erro ao Exportar',
-              `Não foi possível exportar ou compartilhar o backup: ${shareErr.message || shareErr}`
-            );
-          }
-        }
-      }
-      return; // IMPORTANT: Avoid falling through to web-only or standard link downloads inside native platforms
-    }
-
-    // 2. Second preference: Modern Web File System Access API (showSaveFilePicker)
-    // This allows the user to CHOOSE THE EXACT FOLDER AND FILE NAME on desktop Chrome, Edge, Opera, etc.
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: fileName,
-          types: [{
-            description: 'Backup do Cofre (JSON)',
-            accept: {
-              'application/json': ['.json'],
-            },
-          }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(jsonString);
-        await writable.close();
-        triggerAlert('Backup Salvo', 'Seu arquivo de backup foi salvo com sucesso na pasta escolhida!');
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') {
-          // User closed/cancelled the save dialog, just return and do nothing
-          console.log('Save file picker was cancelled by the user.');
-          return;
-        }
-        console.warn('showSaveFilePicker failed, trying next fallback:', err);
-      }
-    }
-
-    // 3. Third preference: Web Share API (extremely robust on modern mobile browsers)
-    if (navigator.share) {
-      try {
-        const file = new File([jsonString], fileName, { type: 'application/json' });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            files: [file],
-            title: 'Backup do Cofre',
-            text: 'Arquivo de backup criptografado (.json)'
-          });
-          triggerAlert('Backup Exportado', 'O arquivo de backup foi compartilhado com sucesso!');
-          return; // Successfully shared!
-        } else {
-          // Fallback to text sharing via navigator.share
-          await navigator.share({
-            title: 'Backup do Cofre (Texto)',
-            text: jsonString
-          });
-          triggerAlert('Backup Exportado', 'O texto de backup foi compartilhado com sucesso!');
-          return; // Successfully shared!
-        }
-      } catch (webShareErr: any) {
-        console.warn('Web Share API failed, trying browser download fallback:', webShareErr);
-      }
-    }
-
-    // 4. Fourth preference & Robust fallback: Auto-Copy to Clipboard + standard browser download
     let clipboardCopied = false;
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1045,33 +903,127 @@ export default function App() {
       console.warn('Auto-copy backup to clipboard failed:', clipErr);
     }
 
+    // Try downloading as a .txt file (which is extremely robust and rarely blocked compared to .json)
+    let fileDownloaded = false;
     try {
-      const blob = new Blob([jsonString], { type: 'application/json' });
+      const blob = new Blob([jsonString], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName;
+      link.setAttribute('download', fileName);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+      fileDownloaded = true;
     } catch (downloadErr) {
-      console.warn('Standard link-click download failed:', downloadErr);
+      console.warn('Standard txt download failed:', downloadErr);
     }
 
     if (clipboardCopied) {
       triggerAlert(
-        'Backup Pronto & Copiado!',
-        'Como alguns navegadores de celular ou aplicativos (APKs) podem bloquear o download direto de arquivos locais, realizamos duas ações:\n\n' +
-        '1. Tentamos baixar o arquivo de backup "' + fileName + '".\n' +
-        '2. Copiamos o texto criptografado completo para a sua Área de Transferência!\n\n' +
-        'Se o arquivo não foi baixado automaticamente no seu dispositivo, não se preocupe: basta colar (Pressionar e Colar / Ctrl+V) em qualquer aplicativo de notas, e-mail ou editor de texto para guardá-lo em segurança!'
+        'Texto Copiado & Salvo!',
+        'Realizamos as seguintes ações para seu backup local:\n\n' +
+        '1. Copiamos o texto de backup completo para a sua Área de Transferência (Pressione e Colar / Ctrl+V)!\n' +
+        (fileDownloaded ? `2. Iniciamos o download do arquivo de texto "${fileName}".\n\n` : '\n') +
+        'Você pode colar o texto copiado diretamente em qualquer editor, bloco de notas ou e-mail para salvá-lo com segurança.'
+      );
+    } else if (fileDownloaded) {
+      triggerAlert(
+        'Backup Exportado!',
+        `Tentamos baixar o arquivo de texto "${fileName}" no seu dispositivo. Verifique a sua pasta de downloads.`
       );
     } else {
       triggerAlert(
-        'Backup Gerado!',
-        'Tentamos baixar o arquivo "' + fileName + '". Verifique a pasta de downloads do seu dispositivo.'
+        'Erro na Exportação',
+        'Não foi possível salvar o arquivo ou copiar o texto. Por favor, tente novamente ou verifique as permissões do seu navegador/dispositivo.'
       );
+    }
+  };
+
+  /**
+   * Export encrypted database backup via email (using mailto link & Clipboard fallback)
+   */
+  const handleExportJsonEmail = async () => {
+    let config = {};
+    let records = [];
+    try {
+      const rawRecords = localStorage.getItem('secure_records');
+      if (rawRecords) records = JSON.parse(rawRecords);
+    } catch (e) {
+      console.warn("Error parsing secure_records from localStorage", e);
+    }
+    try {
+      const rawConfig = localStorage.getItem('secure_config');
+      if (rawConfig) config = JSON.parse(rawConfig);
+    } catch (e) {
+      console.warn("Error parsing secure_config from localStorage", e);
+    }
+
+    const transferPayload = {
+      appIdentifier: 'memo-seguro-criptografado-e2e',
+      exportedAt: new Date().toISOString(),
+      config,
+      records
+    };
+
+    const jsonString = JSON.stringify(transferPayload, null, 2);
+
+    // Copy to clipboard first as a guaranteed fallback!
+    let clipboardCopied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(jsonString);
+        clipboardCopied = true;
+      } else {
+        clipboardCopied = copyToClipboardFallback(jsonString);
+      }
+    } catch (clipErr) {
+      console.warn('Auto-copy to clipboard failed during email export:', clipErr);
+    }
+
+    // Prepare email subject and body
+    const emailSubject = encodeURIComponent("Backup Criptografado do Meu Cofre de Senhas (.JSON)");
+    const emailBody = encodeURIComponent(
+      "Olá,\n\nAqui está o seu backup criptografado do Cofre de Senhas (.JSON).\n\n" +
+      "Se você precisar restaurar seus dados neste ou em outro dispositivo, basta copiar todo o texto abaixo e importá-lo no aplicativo:\n\n" +
+      "--- INÍCIO DO BACKUP ---\n" +
+      jsonString +
+      "\n--- FIM DO BACKUP ---\n\n" +
+      "Mantenha este e-mail em segurança. Não compartilhe este código com ninguém!"
+    );
+
+    const mailtoUrl = `mailto:?subject=${emailSubject}&body=${emailBody}`;
+
+    // Open email client
+    try {
+      const link = document.createElement('a');
+      link.href = mailtoUrl;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      triggerAlert(
+        'E-mail Preparado!',
+        'Tentamos abrir o seu aplicativo de e-mail com o backup pronto para ser enviado.\n\n' +
+        (clipboardCopied ? 'Nota Importante: Copiamos também o JSON completo do backup para a sua Área de Transferência. Se o corpo do e-mail aparecer em branco devido aos limites do seu aplicativo de e-mail, basta Pressionar e Colar (Ctrl+V) no corpo da mensagem!' : '')
+      );
+    } catch (mailErr) {
+      console.error('Failed to open mail client:', mailErr);
+      if (clipboardCopied) {
+        triggerAlert(
+          'Texto de Backup Copiado!',
+          'Não conseguimos abrir o seu aplicativo de e-mail automaticamente.\n\n' +
+          'No entanto, o JSON do seu backup foi copiado com sucesso para a Área de Transferência!\n\n' +
+          'Por favor, abra o seu aplicativo de e-mail (ou notas) manualmente, crie uma mensagem para si mesmo e cole (Ctrl+V) o conteúdo.'
+        );
+      } else {
+        triggerAlert(
+          'Erro ao Exportar',
+          'Não foi possível iniciar o e-mail ou copiar o texto. Verifique as configurações do seu dispositivo.'
+        );
+      }
     }
   };
 
@@ -2832,16 +2784,27 @@ export default function App() {
                     
                     {/* CARD 1: JSON BACKUP MANAGEMENT */}
                     <div className="space-y-2" id="json-backup-section">
-                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Backup Local</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* EXPORT BUTTON */}
+                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider text-left">Backup Local</div>
+                      
+                      <div className="space-y-2">
+                        {/* EXPORT TEXT LOCAL BUTTON */}
                         <button
-                          onClick={handleExportBackup}
+                          onClick={handleExportTextLocal}
                           className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm w-full"
-                          id="settings-export-btn"
+                          id="settings-export-text-local-btn"
                         >
-                          <Download className="h-3.5 w-3.5 text-emerald-400" />
-                          <span>Exportar JSON</span>
+                          <Copy className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>Exportar Texto (Local)</span>
+                        </button>
+
+                        {/* EXPORT JSON TO EMAIL BUTTON */}
+                        <button
+                          onClick={handleExportJsonEmail}
+                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm w-full"
+                          id="settings-export-json-email-btn"
+                        >
+                          <Mail className="h-3.5 w-3.5 text-amber-400" />
+                          <span>Enviar .JSON por E-mail</span>
                         </button>
 
                         {/* IMPORT BUTTON */}
@@ -2851,7 +2814,7 @@ export default function App() {
                           id="settings-import-btn"
                         >
                           <Upload className="h-3.5 w-3.5 text-blue-400" />
-                          <span>Importar JSON</span>
+                          <span>Importar Arquivo (.json ou .txt)</span>
                         </button>
                       </div>
 
