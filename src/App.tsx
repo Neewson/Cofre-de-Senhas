@@ -23,7 +23,6 @@ import {
   RefreshCw, 
   Download, 
   Upload, 
-  Mail, 
   Eye, 
   EyeOff, 
   LogOut, 
@@ -64,11 +63,6 @@ import {
   signInWithPopup
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-
-// Capacitor Native API Imports
-import { Capacitor } from '@capacitor/core';
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
-import { Share } from '@capacitor/share';
 
 // Standardized Firestore error-reporting structure as mandated by security skills
 enum OperationType {
@@ -156,27 +150,6 @@ function promiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMsg:
   ]);
 }
 
-// Fallback clipboard copying utility for older Android WebViews or non-HTTPS native environments
-const copyToClipboardFallback = (text: string): boolean => {
-  const textArea = document.createElement('textarea');
-  textArea.value = text;
-  textArea.style.top = '0';
-  textArea.style.left = '0';
-  textArea.style.position = 'fixed';
-  textArea.style.opacity = '0';
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-  let successful = false;
-  try {
-    successful = document.execCommand('copy');
-  } catch (err) {
-    console.error('Fallback copy failed', err);
-  }
-  document.body.removeChild(textArea);
-  return successful;
-};
-
 export default function App() {
   // Authentication & Configuration states
   const [isSetup, setIsSetup] = useState<boolean>(false);
@@ -216,10 +189,6 @@ export default function App() {
   // Backup Import/Export triggers
   const [importStatus, setImportStatus] = useState<{ success: boolean; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pastedJsonSetup, setPastedJsonSetup] = useState<string>('');
-  const [showPastedImportSetup, setShowPastedImportSetup] = useState<boolean>(false);
-  const [pastedJsonSettings, setPastedJsonSettings] = useState<string>('');
-  const [showPastedImportSettings, setShowPastedImportSettings] = useState<boolean>(false);
 
   // Google Drive Cloud Backup states
   const [gdriveAccessToken, setGdriveAccessToken] = useState<string | null>(null);
@@ -433,12 +402,7 @@ export default function App() {
    */
   const handleCopyToClipboard = async (text: string, id: string) => {
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const ok = copyToClipboardFallback(text);
-        if (!ok) throw new Error('Fallback copy failed');
-      }
+      await navigator.clipboard.writeText(text);
       const secondsSetting = parseInt(clipboardTimeout);
       if (secondsSetting > 0) {
         setCopiedNotification({ id, secondsLeft: secondsSetting });
@@ -863,168 +827,28 @@ export default function App() {
   };
 
   /**
-   * Export encrypted database backup locally as plain text (Copies to Clipboard & Downloads .txt file)
+   * Export encrypted database backup file
    */
-  const handleExportTextLocal = async () => {
-    let config = {};
-    let records = [];
-    try {
-      const rawRecords = localStorage.getItem('secure_records');
-      if (rawRecords) records = JSON.parse(rawRecords);
-    } catch (e) {
-      console.warn("Error parsing secure_records from localStorage", e);
-    }
-    try {
-      const rawConfig = localStorage.getItem('secure_config');
-      if (rawConfig) config = JSON.parse(rawConfig);
-    } catch (e) {
-      console.warn("Error parsing secure_config from localStorage", e);
-    }
-
+  const handleExportBackup = () => {
+    const rawData = localStorage.getItem('secure_records') || '[]';
+    const configData = localStorage.getItem('secure_config') || '{}';
+    
     const transferPayload = {
       appIdentifier: 'memo-seguro-criptografado-e2e',
       exportedAt: new Date().toISOString(),
-      config,
-      records
+      config: JSON.parse(configData),
+      records: JSON.parse(rawData)
     };
 
-    const fileName = `Cofre_Backup_Texto_${new Date().toISOString().slice(0, 10)}.txt`;
-    const jsonString = JSON.stringify(transferPayload, null, 2);
-
-    let clipboardCopied = false;
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(jsonString);
-        clipboardCopied = true;
-      } else {
-        clipboardCopied = copyToClipboardFallback(jsonString);
-      }
-    } catch (clipErr) {
-      console.warn('Auto-copy backup to clipboard failed:', clipErr);
-    }
-
-    // Try downloading as a .txt file (which is extremely robust and rarely blocked compared to .json)
-    let fileDownloaded = false;
-    try {
-      const blob = new Blob([jsonString], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', fileName);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      fileDownloaded = true;
-    } catch (downloadErr) {
-      console.warn('Standard txt download failed:', downloadErr);
-    }
-
-    if (clipboardCopied) {
-      triggerAlert(
-        'Texto Copiado & Salvo!',
-        'Realizamos as seguintes ações para seu backup local:\n\n' +
-        '1. Copiamos o texto de backup completo para a sua Área de Transferência (Pressione e Colar / Ctrl+V)!\n' +
-        (fileDownloaded ? `2. Iniciamos o download do arquivo de texto "${fileName}".\n\n` : '\n') +
-        'Você pode colar o texto copiado diretamente em qualquer editor, bloco de notas ou e-mail para salvá-lo com segurança.'
-      );
-    } else if (fileDownloaded) {
-      triggerAlert(
-        'Backup Exportado!',
-        `Tentamos baixar o arquivo de texto "${fileName}" no seu dispositivo. Verifique a sua pasta de downloads.`
-      );
-    } else {
-      triggerAlert(
-        'Erro na Exportação',
-        'Não foi possível salvar o arquivo ou copiar o texto. Por favor, tente novamente ou verifique as permissões do seu navegador/dispositivo.'
-      );
-    }
-  };
-
-  /**
-   * Export encrypted database backup via email (using mailto link & Clipboard fallback)
-   */
-  const handleExportJsonEmail = async () => {
-    let config = {};
-    let records = [];
-    try {
-      const rawRecords = localStorage.getItem('secure_records');
-      if (rawRecords) records = JSON.parse(rawRecords);
-    } catch (e) {
-      console.warn("Error parsing secure_records from localStorage", e);
-    }
-    try {
-      const rawConfig = localStorage.getItem('secure_config');
-      if (rawConfig) config = JSON.parse(rawConfig);
-    } catch (e) {
-      console.warn("Error parsing secure_config from localStorage", e);
-    }
-
-    const transferPayload = {
-      appIdentifier: 'memo-seguro-criptografado-e2e',
-      exportedAt: new Date().toISOString(),
-      config,
-      records
-    };
-
-    const jsonString = JSON.stringify(transferPayload, null, 2);
-
-    // Copy to clipboard first as a guaranteed fallback!
-    let clipboardCopied = false;
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(jsonString);
-        clipboardCopied = true;
-      } else {
-        clipboardCopied = copyToClipboardFallback(jsonString);
-      }
-    } catch (clipErr) {
-      console.warn('Auto-copy to clipboard failed during email export:', clipErr);
-    }
-
-    // Prepare email subject and body
-    const emailSubject = encodeURIComponent("Backup Criptografado do Meu Cofre de Senhas (.JSON)");
-    const emailBody = encodeURIComponent(
-      "Olá,\n\nAqui está o seu backup criptografado do Cofre de Senhas (.JSON).\n\n" +
-      "Se você precisar restaurar seus dados neste ou em outro dispositivo, basta copiar todo o texto abaixo e importá-lo no aplicativo:\n\n" +
-      "--- INÍCIO DO BACKUP ---\n" +
-      jsonString +
-      "\n--- FIM DO BACKUP ---\n\n" +
-      "Mantenha este e-mail em segurança. Não compartilhe este código com ninguém!"
-    );
-
-    const mailtoUrl = `mailto:?subject=${emailSubject}&body=${emailBody}`;
-
-    // Open email client
-    try {
-      const link = document.createElement('a');
-      link.href = mailtoUrl;
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      triggerAlert(
-        'E-mail Preparado!',
-        'Tentamos abrir o seu aplicativo de e-mail com o backup pronto para ser enviado.\n\n' +
-        (clipboardCopied ? 'Nota Importante: Copiamos também o JSON completo do backup para a sua Área de Transferência. Se o corpo do e-mail aparecer em branco devido aos limites do seu aplicativo de e-mail, basta Pressionar e Colar (Ctrl+V) no corpo da mensagem!' : '')
-      );
-    } catch (mailErr) {
-      console.error('Failed to open mail client:', mailErr);
-      if (clipboardCopied) {
-        triggerAlert(
-          'Texto de Backup Copiado!',
-          'Não conseguimos abrir o seu aplicativo de e-mail automaticamente.\n\n' +
-          'No entanto, o JSON do seu backup foi copiado com sucesso para a Área de Transferência!\n\n' +
-          'Por favor, abra o seu aplicativo de e-mail (ou notas) manualmente, crie uma mensagem para si mesmo e cole (Ctrl+V) o conteúdo.'
-        );
-      } else {
-        triggerAlert(
-          'Erro ao Exportar',
-          'Não foi possível iniciar o e-mail ou copiar o texto. Verifique as configurações do seu dispositivo.'
-        );
-      }
-    }
+    const blob = new Blob([JSON.stringify(transferPayload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   /**
@@ -1056,35 +880,6 @@ export default function App() {
       }
     };
     reader.readAsText(file);
-  };
-
-  /**
-   * Import backup database file securely from direct pasted JSON text
-   */
-  const handleImportPastedJSON = (jsonText: string) => {
-    setImportStatus(null);
-    if (!jsonText || !jsonText.trim()) {
-      setImportStatus({ success: false, message: 'O conteúdo de texto do backup JSON está vazio.' });
-      return;
-    }
-
-    try {
-      const payload = JSON.parse(jsonText.trim());
-      if (payload.appIdentifier !== 'memo-seguro-criptografado-e2e') {
-        setImportStatus({ success: false, message: 'Texto inválido. Formato sem assinatura de segurança do app.' });
-        return;
-      }
-
-      // Overwrite locally and lock for safety
-      localStorage.setItem('secure_config', JSON.stringify(payload.config));
-      localStorage.setItem('secure_records', JSON.stringify(payload.records));
-      
-      setImportStatus({ success: true, message: 'Cofre importado com absoluto sucesso! Digite a senha mestra para desbloquear.' });
-      setIsSetup(true);
-      handleLockVault();
-    } catch (error) {
-      setImportStatus({ success: false, message: 'Falha durante o parse do texto JSON do cofre. Certifique-se de copiar o texto completo.' });
-    }
   };
 
   /**
@@ -1374,8 +1169,8 @@ export default function App() {
       try {
         await promiseWithTimeout(
           setDoc(docRef, transferPayload),
-          20000,
-          'O servidor do Firebase demorou muito para responder (timeout de 20s). Verifique se o banco de dados do Firebase ou se a sua conexão de rede está ativa.'
+          8000,
+          'O servidor do Firebase demorou muito para responder (timeout de 8s). Verifique se o banco de dados do Firebase ou se a sua conexão de rede está ativa.'
         );
       } catch (firestoreErr: any) {
         if (firestoreErr.message && firestoreErr.message.includes('timeout')) {
@@ -1413,8 +1208,8 @@ export default function App() {
           try {
             docSnap = await promiseWithTimeout(
               getDoc(docRef),
-              20000,
-              'O servidor do Firebase demorou muito para responder (timeout de 20s). Verifique sua conexão com a internet ou se o banco de dados do Firebase está acessível.'
+              8000,
+              'O servidor do Firebase demorou muito para responder (timeout de 8s). Verifique sua conexão com a internet ou se o banco de dados do Firebase está acessível.'
             );
           } catch (firestoreErr: any) {
             if (firestoreErr.message && firestoreErr.message.includes('timeout')) {
@@ -1898,45 +1693,14 @@ export default function App() {
                     {/* Quick Restore link for setup screens */}
                     <div className="pt-4 border-t border-slate-900/60 text-center space-y-2">
                       <p className="text-[10px] text-slate-500 font-medium">Já possui um backup (.json)?</p>
-                      <div className="flex flex-col items-center gap-2">
-                        <button 
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="px-4 py-2 bg-[#090b11] hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-300 rounded-xl cursor-pointer transition inline-flex items-center space-x-1.5"
-                          id="btn-import-restore-setup"
-                        >
-                          <Upload className="h-3 w-3 text-emerald-400" />
-                          <span>Selecionar Arquivo .json</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setShowPastedImportSetup(!showPastedImportSetup)}
-                          className="text-[9px] text-slate-400 hover:text-slate-300 underline font-mono cursor-pointer"
-                        >
-                          {showPastedImportSetup ? '✕ Ocultar colar texto' : 'Ou importar colando texto do JSON'}
-                        </button>
-                      </div>
-
-                      {showPastedImportSetup && (
-                        <div className="mt-2 space-y-1.5 text-left bg-[#05070a]/60 p-2.5 rounded-xl border border-slate-900">
-                          <textarea
-                            rows={4}
-                            value={pastedJsonSetup}
-                            onChange={(e) => setPastedJsonSetup(e.target.value)}
-                            placeholder='Cole aqui todo o conteúdo de texto do seu arquivo .json de backup exportado...'
-                            className="w-full bg-[#05070a] border border-slate-800 text-[10px] font-mono p-2 rounded-lg focus:outline-none focus:border-emerald-500/50 text-slate-300 placeholder:text-slate-600"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleImportPastedJSON(pastedJsonSetup)}
-                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-[10px] rounded-lg cursor-pointer transition uppercase"
-                          >
-                            Validar e Restaurar por Texto
-                          </button>
-                        </div>
-                      )}
-
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-4 py-2 bg-[#090b11] hover:bg-slate-900 border border-slate-800 text-[10px] font-bold text-slate-300 rounded-xl cursor-pointer transition inline-flex items-center space-x-1.5"
+                        id="btn-import-restore-setup"
+                      >
+                        <Upload className="h-3 w-3 text-emerald-400" />
+                        <span>Restaurar Cofre Existente</span>
+                      </button>
                       <input 
                         type="file" 
                         ref={fileInputRef} 
@@ -2784,27 +2548,16 @@ export default function App() {
                     
                     {/* CARD 1: JSON BACKUP MANAGEMENT */}
                     <div className="space-y-2" id="json-backup-section">
-                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider text-left">Backup Local</div>
-                      
-                      <div className="space-y-2">
-                        {/* EXPORT TEXT LOCAL BUTTON */}
+                      <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Backup Local</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* EXPORT BUTTON */}
                         <button
-                          onClick={handleExportTextLocal}
+                          onClick={handleExportBackup}
                           className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm w-full"
-                          id="settings-export-text-local-btn"
+                          id="settings-export-btn"
                         >
-                          <Copy className="h-3.5 w-3.5 text-emerald-400" />
-                          <span>Exportar Texto (Local)</span>
-                        </button>
-
-                        {/* EXPORT JSON TO EMAIL BUTTON */}
-                        <button
-                          onClick={handleExportJsonEmail}
-                          className="py-2.5 bg-[#090b11] hover:bg-slate-900 text-slate-300 text-[10px] border border-slate-800/80 rounded-xl cursor-pointer transition flex items-center justify-center space-x-1.5 font-bold shadow-sm w-full"
-                          id="settings-export-json-email-btn"
-                        >
-                          <Mail className="h-3.5 w-3.5 text-amber-400" />
-                          <span>Enviar .JSON por E-mail</span>
+                          <Download className="h-3.5 w-3.5 text-emerald-400" />
+                          <span>Exportar JSON</span>
                         </button>
 
                         {/* IMPORT BUTTON */}
@@ -2814,36 +2567,323 @@ export default function App() {
                           id="settings-import-btn"
                         >
                           <Upload className="h-3.5 w-3.5 text-blue-400" />
-                          <span>Importar Arquivo (.json ou .txt)</span>
+                          <span>Importar JSON</span>
                         </button>
                       </div>
+                    </div>
 
-                      <div className="text-center pt-1">
-                        <button
-                          type="button"
-                          onClick={() => setShowPastedImportSettings(!showPastedImportSettings)}
-                          className="text-[9px] text-slate-400 hover:text-slate-300 underline font-mono cursor-pointer"
-                        >
-                          {showPastedImportSettings ? '✕ Ocultar colar texto' : 'Ou restaurar colando o texto do JSON'}
-                        </button>
+                    {/* CARD 2: GOOGLE DRIVE CLOUD BACKUP */}
+                    <div className="space-y-2.5" id="gdrive-backup-section">
+                      <div 
+                        onClick={() => setGdriveCollapsed(!gdriveCollapsed)}
+                        className="flex items-center justify-between p-3 bg-[#090b11]/80 hover:bg-slate-900 border border-slate-900/80 rounded-xl cursor-pointer transition duration-150 select-none"
+                      >
+                        <div className="text-[10px] uppercase font-bold text-slate-300 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
+                          <Cloud className={`h-3.5 w-3.5 ${gdriveAccessToken ? 'text-emerald-400' : 'text-slate-500'}`} />
+                          <span>Backup na Nuvem (Google Drive)</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {gdriveAccessToken ? (
+                            <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
+                              Conectado
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
+                              Desconectado
+                            </span>
+                          )}
+                          {gdriveCollapsed ? (
+                            <ChevronDown className="h-4 w-4 text-slate-500" />
+                          ) : (
+                            <ChevronUp className="h-4 w-4 text-emerald-400" />
+                          )}
+                        </div>
                       </div>
 
-                      {showPastedImportSettings && (
-                        <div className="space-y-1.5 pt-1.5 text-left bg-[#05070a]/60 p-2.5 rounded-xl border border-slate-900 animate-fade-in">
-                          <textarea
-                            rows={4}
-                            value={pastedJsonSettings}
-                            onChange={(e) => setPastedJsonSettings(e.target.value)}
-                            placeholder='Cole aqui todo o conteúdo de texto do seu arquivo .json de backup exportado...'
-                            className="w-full bg-[#05070a] border border-slate-800 text-[10px] font-mono p-2 rounded-lg focus:outline-none focus:border-emerald-500/50 text-slate-300 placeholder:text-slate-600"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleImportPastedJSON(pastedJsonSettings)}
-                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-[10px] rounded-lg cursor-pointer transition uppercase"
-                          >
-                            Validar e Restaurar por Texto
-                          </button>
+                      {/* GDrive status info / instructions */}
+                      {!gdriveCollapsed && (
+                        <div className="space-y-2.5 animate-fade-in">
+                          {gdriveAccessToken ? (
+                            <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="text-[10px] text-slate-400">Conta conectada:</div>
+                                  <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{gdriveUserEmail}</div>
+                                </div>
+                                <button 
+                                  onClick={handleDisconnectGDrive}
+                                  className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer"
+                                >
+                                  <span>Desconectar</span>
+                                </button>
+                              </div>
+
+                              {gdriveLastSync && (
+                                <div className="text-[9px] text-slate-500 font-mono">
+                                  Último Sincronismo: <span className="text-slate-400 font-semibold">{gdriveLastSync}</span>
+                                </div>
+                              )}
+
+                              {gdriveIsSyncing && gdriveStatusMessage && (
+                                <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
+                                  <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                                  <span>{gdriveStatusMessage}</span>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                <button
+                                  onClick={handleGDriveBackup}
+                                  disabled={gdriveIsSyncing}
+                                  className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <RefreshCw className={`h-3 w-3 ${gdriveIsSyncing ? 'animate-spin' : ''}`} />
+                                  <span>Salvar Nuvem</span>
+                                </button>
+                                <button
+                                  onClick={handleGDriveRestore}
+                                  disabled={gdriveIsSyncing}
+                                  className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  <span>Baixar Nuvem</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
+                              <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                                Salve e sincronize seus dados criptografados AES-256 com segurança de ponta-a-ponta na sua conta Google Drive pessoal.
+                              </p>
+
+                              <button
+                                onClick={() => handleConnectGDrive()}
+                                className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
+                              >
+                                <Cloud className="h-3.5 w-3.5" />
+                                <span>Autenticar & Conectar</span>
+                              </button>
+
+                              <div className="pt-1.5 border-t border-slate-900/60">
+                                <button
+                                  onClick={() => setShowGDriveClientSetup(!showGDriveClientSetup)}
+                                  className="w-full text-center text-[9px] text-slate-500 hover:text-slate-400 uppercase font-bold tracking-wider font-mono py-1 cursor-pointer"
+                                >
+                                  {showGDriveClientSetup ? 'Ocultar ID do Cliente Google ✕' : 'Ver ID do Cliente Google &rarr;'}
+                                </button>
+
+                                {showGDriveClientSetup && (
+                                  <motion.div 
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    className="space-y-2 pt-2 text-left"
+                                  >
+                                    <div className="space-y-1">
+                                      <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                        Google OAuth 2.0 Client ID
+                                      </label>
+                                      <input
+                                        type="text"
+                                        value={gdriveClientId}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          setGdriveClientId(val);
+                                          localStorage.setItem('secure_google_client_id', val);
+                                        }}
+                                        placeholder="Ex: 749364...apps.googleusercontent.com"
+                                        className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[10px] font-mono p-1.5 rounded-lg focus:outline-none focus:border-slate-800"
+                                      />
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 leading-normal font-sans">
+                                      Usamos o escopo seguro e restrito <span className="font-mono text-slate-400 font-semibold bg-slate-950/65 px-1.5 py-0.5 rounded border border-slate-900">drive.file</span>. O backup fica completamente restrito a esta sessão de usuário, sem qualquer acesso amplo ou invasivo aos seus demais arquivos particulares.
+                                    </p>
+                                  </motion.div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* CARD 3: FIREBASE CLOUD SYNC */}
+                    <div className="space-y-2.5" id="firebase-sync-section">
+                      <div 
+                        onClick={() => setFirebaseCollapsed(!firebaseCollapsed)}
+                        className="flex items-center justify-between p-3 bg-[#090b11]/80 hover:bg-slate-900 border border-slate-900/80 rounded-xl cursor-pointer transition duration-150 select-none"
+                      >
+                        <div className="text-[10px] uppercase font-bold text-slate-300 tracking-wider flex items-center space-x-1.5 flex-wrap gap-1 font-sans">
+                          <Cloud className={`h-4 w-4 ${fbUser ? 'text-emerald-400' : 'text-slate-500'}`} />
+                          <span>Backup na Nuvem (Firebase)</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {fbUser ? (
+                            <span className="text-[9px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded-full border border-emerald-900/30 font-semibold font-mono animate-pulse">
+                              Conectado
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-500 bg-slate-950/40 px-2 py-0.5 rounded-full border border-slate-900/60 font-semibold font-mono font-bold">
+                              Desconectado
+                            </span>
+                          )}
+                          {firebaseCollapsed ? (
+                            <ChevronDown className="h-4 w-4 text-slate-500" />
+                          ) : (
+                            <ChevronUp className="h-4 w-4 text-emerald-400" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Firebase sync panel */}
+                      {!firebaseCollapsed && (
+                        <div className="space-y-2.5 animate-fade-in">
+                          {fbUser ? (
+                            <div className="bg-[#090b11]/60 border border-emerald-950/20 p-3 rounded-xl space-y-2.5 text-left">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="text-[10px] text-slate-400">Conta sincronizada:</div>
+                                  <div className="text-xs font-semibold text-emerald-300 font-mono select-all truncate max-w-[180px]">{fbUser.email}</div>
+                                </div>
+                                <button 
+                                  onClick={handleFbLogout}
+                                  disabled={fbIsLoading}
+                                  className="text-[9px] font-bold text-red-400 hover:underline hover:text-red-300 uppercase tracking-wider font-mono flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <span>Sair</span>
+                                </button>
+                              </div>
+
+                              {fbLastSync && (
+                                <div className="text-[9px] text-slate-500 font-mono">
+                                  Último Sincronismo: <span className="text-slate-400 font-semibold">{fbLastSync}</span>
+                                </div>
+                              )}
+
+                              {fbIsLoading && (
+                                <div className="text-[10px] text-emerald-400 font-mono flex items-center space-x-1.5 animate-pulse bg-emerald-950/10 p-1.5 rounded-lg border border-emerald-900/10">
+                                  <RefreshCw className="h-3 w-3 animate-spin text-emerald-400" />
+                                  <span>Sincronizando dados com Firebase...</span>
+                                </div>
+                              )}
+
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                <button
+                                  onClick={handleFbBackup}
+                                  disabled={fbIsLoading}
+                                  className="py-2.5 bg-emerald-600/15 hover:bg-emerald-600/25 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <RefreshCw className={`h-3 w-3 ${fbIsLoading ? 'animate-spin' : ''}`} />
+                                  <span>Salvar Nuvem</span>
+                                </button>
+                                <button
+                                  onClick={handleFbRestore}
+                                  disabled={fbIsLoading}
+                                  className="py-2.5 bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition flex items-center justify-center space-x-1 disabled:opacity-50 cursor-pointer text-center"
+                                >
+                                  <Download className="h-3 w-3" />
+                                  <span>Baixar Nuvem</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-[#090b11]/60 border border-slate-900 rounded-xl space-y-3 text-left">
+                              <p className="text-[10px] text-slate-400 leading-relaxed font-sans">
+                                Crie sua conta ou faça login para sincronizar e salvar com segurança o seu cofre end-to-end criptografado (AES-256) na nuvem do Firebase.
+                              </p>
+
+                              <form onSubmit={fbMode === 'login' ? handleFbLogin : handleFbRegister} className="space-y-3">
+                                <div className="space-y-2">
+                                  <div>
+                                    <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                      E-mail
+                                    </label>
+                                    <input
+                                      type="email"
+                                      required
+                                      value={fbEmail}
+                                      onChange={(e) => setFbEmail(e.target.value)}
+                                      placeholder="Digite seu e-mail"
+                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="text-[9px] font-mono font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                      Senha do Firebase Sync
+                                    </label>
+                                    <input
+                                      type="password"
+                                      required
+                                      value={fbPassword}
+                                      onChange={(e) => setFbPassword(e.target.value)}
+                                      placeholder="Ao menos 6 caracteres"
+                                      className="w-full bg-[#05070a] border border-slate-900 text-slate-300 text-[11px] p-2 rounded-lg focus:outline-none focus:border-slate-800"
+                                    />
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="submit"
+                                  disabled={fbIsLoading}
+                                  className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-slate-950 text-[10.5px] rounded-lg font-extrabold transition flex items-center justify-center space-x-1.5 shadow-md cursor-pointer"
+                                >
+                                  {fbIsLoading ? (
+                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Cloud className="h-3.5 w-3.5" />
+                                  )}
+                                  <span>{fbMode === 'login' ? 'Entrar & Sincronizar' : 'Criar Conta & Sincronizar'}</span>
+                                </button>
+                              </form>
+
+                              <div className="relative my-3">
+                                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                                  <div className="w-full border-t border-slate-900"></div>
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase font-mono">
+                                  <span className="bg-[#0b0e14] px-2 text-slate-500 font-semibold text-[9px]">ou use</span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={handleGoogleSignIn}
+                                disabled={fbIsLoading}
+                                className="w-full py-2 bg-[#05070a] hover:bg-slate-950/80 border border-slate-900 hover:border-slate-800 text-slate-200 text-[10.5px] rounded-lg font-bold transition flex items-center justify-center space-x-2 shadow-sm cursor-pointer disabled:opacity-50"
+                              >
+                                <svg className="h-3.5 w-3.5" viewBox="0 0 24 24">
+                                  <path
+                                    fill="currentColor"
+                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.85z"
+                                  />
+                                  <path
+                                    fill="currentColor"
+                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.85c.87-2.6 3.3-4.53 6.16-4.53z"
+                                  />
+                                </svg>
+                                <span>Entrar com o Google</span>
+                              </button>
+
+                              <div className="text-center pt-2.5 border-t border-slate-900 flex items-center justify-center space-x-2 text-[9.5px] text-slate-400">
+                                <span>{fbMode === 'login' ? 'Não possui conta?' : 'Já possui conta?'}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setFbMode(fbMode === 'login' ? 'register' : 'login')}
+                                  className="font-bold text-emerald-400 hover:underline uppercase tracking-wider font-mono cursor-pointer"
+                                >
+                                  {fbMode === 'login' ? 'Cadastrar' : 'Entrar'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
