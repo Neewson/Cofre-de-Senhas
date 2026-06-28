@@ -878,7 +878,7 @@ export default function App() {
     const fileName = `Cofre_Backup_Senhas_${new Date().toISOString().slice(0, 10)}.json`;
     const jsonString = JSON.stringify(transferPayload, null, 2);
 
-    // 1. First preference: Capacitor Native Platform
+    // 1. First preference: Capacitor Native Platform (Android APK / iOS)
     if (Capacitor.isNativePlatform()) {
       try {
         const result = await Filesystem.writeFile({
@@ -901,7 +901,35 @@ export default function App() {
       }
     }
 
-    // 2. Second preference: Web Share API (extremely robust on modern browsers and hybrid mobile WebViews)
+    // 2. Second preference: Modern Web File System Access API (showSaveFilePicker)
+    // This allows the user to CHOOSE THE EXACT FOLDER AND FILE NAME on desktop Chrome, Edge, Opera, etc.
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{
+            description: 'Backup do Cofre (JSON)',
+            accept: {
+              'application/json': ['.json'],
+            },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(jsonString);
+        await writable.close();
+        triggerAlert('Backup Salvo', 'Seu arquivo de backup foi salvo com sucesso na pasta escolhida!');
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') {
+          // User closed/cancelled the save dialog, just return and do nothing
+          console.log('Save file picker was cancelled by the user.');
+          return;
+        }
+        console.warn('showSaveFilePicker failed, trying next fallback:', err);
+      }
+    }
+
+    // 3. Third preference: Web Share API (extremely robust on modern browsers and hybrid mobile WebViews)
     if (navigator.share) {
       try {
         const file = new File([jsonString], fileName, { type: 'application/json' });
@@ -927,7 +955,7 @@ export default function App() {
       }
     }
 
-    // 3. Third preference & Robust fallback: Auto-Copy to Clipboard + standard browser download
+    // 4. Fourth preference & Robust fallback: Auto-Copy to Clipboard + standard browser download
     let clipboardCopied = false;
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
